@@ -15,11 +15,13 @@ import {
 import { batchSourceDirectory } from '../storage/batch-store.js'
 
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: batchSourceDirectory,
-    filename: (_request, file, callback) => callback(null, `${randomUUID()}${path.extname(file.originalname).toLowerCase()}`),
-  }),
-  limits: { fileSize: 50 * 1024 * 1024, files: 20 },
+  
+    storage: multer.diskStorage({
+        destination: batchSourceDirectory,
+        filename: (_request, file, callback) => callback(null, `${randomUUID()}${path.extname(file.originalname).toLowerCase()}`),
+    }),
+  
+    limits: { fileSize: 50 * 1024 * 1024, files: 20 },
 })
 
 function uploadBatch(request: Request, response: Response, next: NextFunction) {

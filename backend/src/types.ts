@@ -5,6 +5,7 @@ export type JobStatus = 'queued' | 'processing' | 'completed' | 'failed'
 
 export type ConversionJob = {
   id: string
+  ownerId: string
   fileName: string
   fileSize: number
   format: OutputFormat
@@ -18,7 +19,7 @@ export type ConversionJob = {
   resultFileName: string | null
 }
 
-export type PublicJob = Omit<ConversionJob, 'sourcePath' | 'resultPath' | 'resultFileName'> & {
+export type PublicJob = Omit<ConversionJob, 'ownerId' | 'sourcePath' | 'resultPath' | 'resultFileName'> & {
   resultFileName?: string
 }
 
@@ -63,6 +64,7 @@ export type BatchConfiguration = {
 
 export type BatchJob = {
   id: string
+  ownerId: string
   fileName: string
   fileSize: number
   fileCount: number
@@ -78,18 +80,18 @@ export type BatchJob = {
   resultFileName: string | null
 }
 
-export type PublicBatchJob = Omit<BatchJob, 'sources' | 'resultPath' | 'resultFileName'> & {
+export type PublicBatchJob = Omit<BatchJob, 'ownerId' | 'sources' | 'resultPath' | 'resultFileName'> & {
   sources: Array<Omit<BatchSource, 'sourcePath'>>
   resultFileName?: string
 }
 
 export function toPublicJob(job: ConversionJob): PublicJob {
-  const { sourcePath: _sourcePath, resultPath: _resultPath, resultFileName, ...publicJob } = job
+  const { ownerId: _ownerId, sourcePath: _sourcePath, resultPath: _resultPath, resultFileName, ...publicJob } = job
   return resultFileName ? { ...publicJob, resultFileName } : publicJob
 }
 
 export function toPublicBatchJob(batch: BatchJob): PublicBatchJob {
-  const { resultPath: _resultPath, resultFileName, sources, ...publicBatch } = batch
+  const { ownerId: _ownerId, resultPath: _resultPath, resultFileName, sources, ...publicBatch } = batch
   const publicSources = sources.map(({ sourcePath: _sourcePath, ...source }) => source)
   return resultFileName ? { ...publicBatch, sources: publicSources, resultFileName } : { ...publicBatch, sources: publicSources }
 }

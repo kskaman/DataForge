@@ -20,6 +20,9 @@ export function queueJob(id: string) {
       if (!currentJob) return
       await saveJob({ ...currentJob, ...result, status: 'completed', error: null })
       log('info', 'job.completed', { jobId: id })
+      void rm(job.sourcePath, { force: true }).catch((error) => {
+        log('error', 'job.source_cleanup_failed', { jobId: id, error: error instanceof Error ? error.message : String(error) })
+      })
     } catch (error) {
       const currentJob = getJob(id)
       if (!currentJob) return
@@ -30,7 +33,7 @@ export function queueJob(id: string) {
   })
 }
 
-export async function createJob(file: Express.Multer.File, format: OutputFormat, splitSheets: boolean) {
+export async function createJob(file: Express.Multer.File, format: OutputFormat, splitSheets: boolean, ownerId: string) {
   const id = randomUUID()
   const extension = path.extname(file.originalname).slice(1).toLowerCase()
   const sourcePath = path.join(sourceDirectory, `${id}.${extension}`)
@@ -38,6 +41,7 @@ export async function createJob(file: Express.Multer.File, format: OutputFormat,
   const now = Date.now()
   const job: ConversionJob = {
     id,
+    ownerId,
     fileName: path.basename(file.originalname),
     fileSize: file.size,
     format,
@@ -57,15 +61,12 @@ export async function createJob(file: Express.Multer.File, format: OutputFormat,
 }
 
 export async function retryJob(job: ConversionJob) {
-  const now = Date.now()
   const retriedJob: ConversionJob = {
     ...job,
     status: 'queued',
     error: null,
     resultPath: null,
     resultFileName: null,
-    createdAt: new Date(now).toISOString(),
-    expiresAt: new Date(now + config.retentionMilliseconds).toISOString(),
   }
   await saveJob(retriedJob)
   log('info', 'job.retried', { jobId: job.id })

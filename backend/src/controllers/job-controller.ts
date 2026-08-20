@@ -1,20 +1,20 @@
 import type { Request, Response } from 'express'
 import { createJob, retryJob } from '../services/job-service.js'
-import { getJob, listJobs } from '../storage/job-store.js'
+import { getJobForOwner, listJobsForOwner } from '../storage/job-store.js'
 import { outputFormats, toPublicJob, type OutputFormat } from '../types.js'
 import { hasValidSignature, signDownload } from '../utils/download-token.js'
 
 type JobRequest = Request<{ id: string }>
 
-export function listJobHandler(_request: Request, response: Response) {
+export function listJobHandler(request: Request, response: Response) {
     response.json({ 
-        jobs: listJobs().map(toPublicJob) 
+        jobs: listJobsForOwner(request.guestOwnerId).map(toPublicJob) 
     })
 }
 
 export function getJobHandler(request: JobRequest, response: Response) {
 
-    const job = getJob(request.params.id)
+    const job = getJobForOwner(request.params.id, request.guestOwnerId)
   
     if (!job) {
         return response.status(404).json({ 
@@ -51,7 +51,7 @@ export async function createJobHandler(request: Request, response: Response) {
         })
     }
 
-    const job = await createJob(file, format, request.body.splitSheets === 'true')
+    const job = await createJob(file, format, request.body.splitSheets === 'true', request.guestOwnerId)
   
     return response.status(202).json({ 
         job: toPublicJob(job) 
@@ -61,7 +61,7 @@ export async function createJobHandler(request: Request, response: Response) {
 
 export async function retryJobHandler(request: JobRequest, response: Response) {
 
-    const job = getJob(request.params.id)
+    const job = getJobForOwner(request.params.id, request.guestOwnerId)
     
     if (!job) {
         return response.status(404).json({ 
@@ -84,7 +84,7 @@ export async function retryJobHandler(request: JobRequest, response: Response) {
 
 export function getDownloadHandler(request: JobRequest, response: Response) {
   
-    const job = getJob(request.params.id)
+    const job = getJobForOwner(request.params.id, request.guestOwnerId)
     
     if (!job) {
         return response.status(404).json({ 
@@ -109,7 +109,7 @@ export function getDownloadHandler(request: JobRequest, response: Response) {
 
 export function downloadHandler(request: JobRequest, response: Response) {
   
-    const job = getJob(request.params.id)
+    const job = getJobForOwner(request.params.id, request.guestOwnerId)
     const expires = Number(request.query.expires)
     const token = typeof request.query.token === 'string' ? request.query.token : ''
   

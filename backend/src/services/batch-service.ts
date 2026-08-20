@@ -37,7 +37,7 @@ function fault(sourceFileName: string, code: BatchFault['code'], message: string
   return sheetName ? { sourceFileName, sheetName, code, message } : { sourceFileName, code, message }
 }
 
-export async function createBatch(files: Express.Multer.File[]) {
+export async function createBatch(files: Express.Multer.File[], ownerId: string) {
   const totalSize = files.reduce((sum, file) => sum + file.size, 0)
   if (files.length === 0) throw new Error('Select at least one file.')
   if (totalSize > aggregateSizeLimit) throw new Error('Batch size must be 200 MB or less.')
@@ -45,6 +45,7 @@ export async function createBatch(files: Express.Multer.File[]) {
   const now = Date.now()
   const batch: BatchJob = {
     id: randomUUID(),
+    ownerId,
     fileName: files.length === 1 ? files[0]!.originalname : `${files.length} files`,
     fileSize: totalSize,
     fileCount: files.length,
@@ -373,6 +374,9 @@ export async function processBatch(id: string) {
     if (!current) return
     await saveBatch({ ...current, ...result, status: 'completed' })
     log('info', 'batch.completed', { batchId: id })
+    void Promise.all(batch.sources.map((source) => rm(source.sourcePath, { force: true }))).catch((error) => {
+      log('error', 'batch.source_cleanup_failed', { batchId: id, error: error instanceof Error ? error.message : String(error) })
+    })
   } catch (error) {
     const current = getBatch(id)
     if (!current) return

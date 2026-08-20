@@ -2,19 +2,21 @@ import cors from 'cors'
 import express from 'express'
 import multer from 'multer'
 import { config } from './config.js'
+import { guestSession } from './middleware/guest-session.js'
 import { batchRouter } from './routes/batch-routes.js'
 import { jobRouter } from './routes/job-routes.js'
 import { log } from './utils/logger.js'
 
 export const app = express()
 
-app.use(cors({ origin: config.frontendOrigin }))
+app.use(cors({ origin: config.frontendOrigin, credentials: true }))
 app.use(express.json())
 
 app.get('/health', (_request, response) => {
   response.json({ status: 'ok', service: 'dataforge-api' })
 })
 
+app.use('/api', guestSession)
 app.use('/api', jobRouter)
 app.use('/api', batchRouter)
 
