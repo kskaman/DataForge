@@ -10,7 +10,7 @@ import {
   listBatches,
   removeBatch,
   saveBatch,
-} from '../storage/batch-store.js'
+} from '../repositories/batch-store.js'
 import type {
   BatchConfiguration,
   BatchFault,

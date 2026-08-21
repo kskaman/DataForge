@@ -1,0 +1,7 @@
+Customer ID,Name,Email,Locale,Lifetime Value,Joined At,Notes
+C-001,Ana María,ana.maria@example.test,es-MX,1250.50,2024-03-15,"Prefers email, Spanish"
+C-002,佐藤 愛,ai.sato@example.test,ja-JP,9800,2022-11-02,東京本社
+C-003,يوسف حمد,yousef@example.test,ar-AE,0,2026-01-09,"New account
+Follow up next week"
+C-004,Zoë O'Connor,zoe@example.test,en-IE,,2023-06-30,"Contains ""quoted"" text"
+C-005,Chloé Dubois,chloe@example.test,fr-CA,-25.75,2021-12-12,Crédit à examiner

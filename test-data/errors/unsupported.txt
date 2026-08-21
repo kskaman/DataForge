@@ -1,0 +1,2 @@
+Record ID,Description
+U-001,The browser should reject this extension before upload.

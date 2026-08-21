@@ -1,0 +1,47 @@
+{
+  "scenarios": {
+    "singleSchemaMerge": {
+      "files": [
+        "valid/sales-north.csv",
+        "valid/sales-south-reordered.csv",
+        "valid/utf8-bom-sales.csv"
+      ],
+      "expectedDatasets": 3,
+      "expectedSchemaGroups": 1,
+      "expectedRows": 9
+    },
+    "complexMixedBatch": {
+      "files": [
+        "valid/sales-north.csv",
+        "valid/sales-south-reordered.csv",
+        "valid/customers-multilingual.csv",
+        "valid/inventory-complex.csv",
+        "valid/quoted-and-sparse.csv",
+        "valid/header-only.csv",
+        "valid/operations-multisheet.xlsx",
+        "valid/utf8-bom-sales.csv",
+        "valid/windows-crlf-customers.csv"
+      ],
+      "expectedDatasets": 12,
+      "expectedSchemaGroups": 7,
+      "expectedRows": 37
+    },
+    "analysisFaults": {
+      "files": [
+        "errors/blank-header.csv",
+        "errors/duplicate-header.csv",
+        "errors/malformed-quotes.csv",
+        "errors/empty.csv",
+        "errors/empty-workbook.xlsx",
+        "errors/empty-sheet.xlsx",
+        "errors/corrupt-workbook.xlsx"
+      ],
+      "expectedFaultCodes": [
+        "blank_header",
+        "duplicate_header",
+        "parse_error",
+        "empty_dataset"
+      ]
+    }
+  }
+}

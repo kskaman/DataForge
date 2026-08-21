@@ -2,7 +2,7 @@ import archiver from 'archiver'
 import { createWriteStream } from 'node:fs'
 import { rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { resultDirectory } from '../storage/job-store.js'
+import { resultDirectory } from '../repositories/job-store.js'
 import type { ConversionJob, OutputFormat } from '../types.js'
 import { readDatasets, type Dataset } from './dataset-service.js'
 

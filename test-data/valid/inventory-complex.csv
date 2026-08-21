@@ -1,0 +1,5 @@
+notes,last counted,UNIT COST,reorder point,on hand,Warehouse,sku
+"Temperature controlled",2026-08-01,72.40,20,120,Montréal,SNS-010
+"Reorder immediately",2026-08-02,31.25,15,3,São Paulo,VLV-210
+"Awaiting customs; priority",2026-08-03,640.00,5,0,東京,KIT-910
+"Count discrepancy",,12.99,10,-2,Berlin,SEAL-42

@@ -12,7 +12,7 @@ import {
   listBatchHandler,
   retryBatchHandler,
 } from '../controllers/batch-controller.js'
-import { batchSourceDirectory } from '../storage/batch-store.js'
+import { batchSourceDirectory } from '../repositories/batch-store.js'
 
 const upload = multer({
   

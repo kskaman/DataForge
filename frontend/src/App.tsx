@@ -35,9 +35,11 @@ function App() {
           <div>
             <p className="eyebrow">Spreadsheet utility</p>
             <h1>{activeView === 'convert' ? 'Convert files' : 'Conversion history'}</h1>
-            <p className="heading-copy">{activeView === 'convert' ? 'Transform Excel and CSV data into clean, portable formats.' : 'Track recent files, retrieve results, and retry failed jobs.'}</p>
+            <p className="heading-copy">{activeView === 'convert' ? 
+              'Transform Excel and CSV data into clean, portable formats.' : 
+              'Track recent files, retrieve results, and retry failed jobs.'}</p>
           </div>
-          {activity.processingCount > 0 && <div className="activity-pill">{activity.processingCount} active</div>}
+          {activity.processingCount >= 0 && <div className="activity-pill">{activity.processingCount} active</div>}
         </section>
 
         {error && <p className="global-error" role="alert">{error}</p>}

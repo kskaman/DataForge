@@ -1,0 +1,5 @@
+ region , fulfilled ,UNIT PRICE,units,Product,ORDER ID,ordered at
+South,true,129.95,6,Pressure sensor,ORD-2001,2026-02-10T10:00:00Z
+South,false,18.5,40,"Valve, brass",ORD-2002,2026-02-11T12:20:00Z
+West,true,64.2,8,Seal kit,ORD-2003,2026-02-12T07:50:00Z
+West,false,,2,Custom assembly,ORD-2004,2026-02-13T18:10:00Z

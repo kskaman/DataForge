@@ -1,7 +1,7 @@
 import { rm } from 'node:fs/promises'
 import type { Request, Response } from 'express'
 import { configureBatch, createBatch, retryBatch } from '../services/batch-service.js'
-import { getBatchForOwner, listBatchesForOwner } from '../storage/batch-store.js'
+import { getBatchForOwner, listBatchesForOwner } from '../repositories/batch-store.js'
 import { toPublicBatchJob, type BatchConfiguration } from '../types.js'
 import { hasValidSignature, signDownload } from '../utils/download-token.js'
 

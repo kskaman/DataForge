@@ -1,0 +1,8 @@
+Record ID,Description,Quantity,Rate,Optional Value,Multiline Note
+R-001,"Contains a comma, safely quoted",12,3.14159,,"Line one
+Line two"
+R-002,"Escaped quote: ""calibrated""",0,-2.5,NULL,
+R-003,Short row,7
+R-004,Extra cell,1,9.99,present,Normal note,ignored trailing value
+
+R-005,Whitespace value, 5 ,0,   ,"Blank lines are skipped"

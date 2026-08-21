@@ -148,7 +148,21 @@ h1 { max-width: 100%; margin-bottom: 10px; font-size: clamp(36px, 5vw, 58px); li
 .status-processing i { animation: pulse 1.2s infinite; }.job-error { display: block; max-width: 190px; margin-top: 5px; color: var(--red); font-size: 8px; }.job-actions { min-width: 70px; text-align: right; }.working-dots { color: var(--muted); letter-spacing: 2px; }
 @keyframes pulse { 50% { opacity: .25; transform: scale(.75); } }
 
-footer { min-height: 82px; display: flex; justify-content: space-between; align-items: center; padding: 0 clamp(22px, 4vw, 64px); border-top: 1px solid var(--line); color: var(--muted); font: 400 9px 'DM Mono', monospace; }
+footer { 
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    min-width: 100%;
+    min-height: 82px; 
+    display: flex; 
+    justify-content: space-between; 
+    align-items: center; 
+    padding: 0 clamp(22px, 4vw, 64px); 
+    border-top: 1px solid var(--line); 
+    color: var(--muted); 
+    font: 400 9px 'DM Mono', monospace; 
+}
+
 footer span:first-child { color: var(--ink); font-weight: 500; }
 
 @media (max-width: 760px) {

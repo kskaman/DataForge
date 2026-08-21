@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express'
 import { createJob, retryJob } from '../services/job-service.js'
-import { getJobForOwner, listJobsForOwner } from '../storage/job-store.js'
+import { getJobForOwner, listJobsForOwner } from '../repositories/job-store.js'
 import { outputFormats, toPublicJob, type OutputFormat } from '../types.js'
 import { hasValidSignature, signDownload } from '../utils/download-token.js'
 

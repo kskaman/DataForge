@@ -1,0 +1,5 @@
+Order ID,Product,Units,Unit Price,Region,Ordered At,Fulfilled
+ORD-1001,Pressure sensor,10,129.95,North,2026-01-03T09:15:00Z,true
+ORD-1002,"Valve, brass",25,18.5,North,2026-01-04T11:30:00Z,false
+ORD-1003,Calibration service,1,850,North,2026-01-05T16:45:00Z,true
+ORD-1004,Flow meter,3,245.75,North,2026-01-06T08:05:00Z,false
