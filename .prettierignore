@@ -1,0 +1,6 @@
+**/node_modules/
+**/dist/
+backend/storage/
+frontend/backend/
+test-data/limits/generated/
+**/package-lock.json

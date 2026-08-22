@@ -6,4 +6,5 @@ import { log } from './utils/logger.js'
 
 await initializeJobs()
 await initializeBatches()
+
 app.listen(config.port, () => log('info', 'server.started', { port: config.port }))

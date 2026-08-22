@@ -25,24 +25,22 @@ export async function initializeStore() {
 }
 
 async function persist() {
-  const temporaryPath = `${jobsPath}.tmp`
-  await writeFile(temporaryPath, JSON.stringify([...jobs.values()], null, 2))
-  await rename(temporaryPath, jobsPath)
+    const temporaryPath = `${jobsPath}.tmp`
+    await writeFile(temporaryPath, JSON.stringify([...jobs.values()], null, 2))
+    await rename(temporaryPath, jobsPath)
 }
 
 function schedulePersist() {
-  writeQueue = writeQueue.then(persist, persist)
-  return writeQueue
+    writeQueue = writeQueue.then(persist, persist)
+    return writeQueue
 }
 
 export function listJobs() {
-    return [...jobs.values()].sort(
-        (left, right) => right.createdAt.localeCompare(left.createdAt)
-    )
+    return [...jobs.values()].sort((left, right) => right.createdAt.localeCompare(left.createdAt))
 }
 
 export function getJob(id: string) {
-  return jobs.get(id)
+    return jobs.get(id)
 }
 
 export function listJobsForOwner(ownerId: string) {
@@ -50,17 +48,17 @@ export function listJobsForOwner(ownerId: string) {
 }
 
 export function getJobForOwner(id: string, ownerId: string) {
-  const job = getJob(id)
-  return job?.ownerId === ownerId ? job : undefined
+    const job = getJob(id)
+    return job?.ownerId === ownerId ? job : undefined
 }
 
 export async function saveJob(job: ConversionJob) {
-  jobs.set(job.id, job)
-  await schedulePersist()
-  return job
+    jobs.set(job.id, job)
+    await schedulePersist()
+    return job
 }
 
 export async function removeJob(id: string) {
-  jobs.delete(id)
-  await schedulePersist()
+    jobs.delete(id)
+    await schedulePersist()
 }
