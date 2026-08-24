@@ -21,7 +21,9 @@ export async function createBatchHandler(request: Request, response: Response) {
 }
 
 export function listBatchHandler(request: Request, response: Response) {
-    response.json({ batches: listBatchesForOwner(request.guestOwnerId).map(toPublicBatchJob) })
+    response.json({
+        batches: listBatchesForOwner(request.guestOwnerId).map(toPublicBatchJob),
+    })
 }
 
 export function getBatchHandler(request: BatchRequest, response: Response) {

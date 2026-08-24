@@ -15,7 +15,7 @@
     },
     "dependencies": {
         "archiver": "^7.0.1",
-        "better-sqlite3": "^13.0.3",
+        "better-sqlite3": "12.6.2",
         "cors": "^2.8.5",
         "csv-parse": "^6.1.0",
         "exceljs": "^4.4.0",

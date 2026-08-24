@@ -512,6 +512,7 @@ h1 {
 }
 .convert-button {
     width: 100%;
+    margin-top: 8px;
     min-height: 49px;
     display: flex;
     justify-content: space-between;
@@ -699,11 +700,11 @@ h1 {
 }
 
 footer {
-    position: absolute;
+    position: relative;
     bottom: 0;
     left: 0;
     min-width: 100%;
-    min-height: 82px;
+    height: 82px;
     display: flex;
     justify-content: space-between;
     align-items: center;
