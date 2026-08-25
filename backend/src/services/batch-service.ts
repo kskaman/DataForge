@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { rename, rm, writeFile } from 'node:fs/promises'
+import { rename, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import Database from 'better-sqlite3'
 import { config } from '../config.js'
@@ -22,7 +22,7 @@ import type {
     SchemaGroup,
 } from '../types.js'
 
-import { log } from '../utils/logger.js'
+import { errorDetails, log } from '../utils/logger.js'
 import { createArchive, datasetContent, safeName } from './conversion-service.js'
 
 import { readDatasets, type Dataset } from './dataset-service.js'
@@ -50,7 +50,11 @@ function fault(
         : { sourceFileName, code, message }
 }
 
-export async function createBatch(files: Express.Multer.File[], ownerId: string) {
+export async function createBatch(
+    files: Express.Multer.File[],
+    ownerId: string,
+    requestId: string,
+) {
     const totalSize = files.reduce((sum, file) => sum + file.size, 0)
 
     if (files.length === 0) throw new Error('Select at least one file.')
@@ -64,6 +68,8 @@ export async function createBatch(files: Express.Multer.File[], ownerId: string)
     const batch: BatchJob = {
         id: randomUUID(),
         ownerId,
+        requestId,
+        queuedAt: new Date(now).toISOString(),
         fileName: files.length === 1 ? files[0]!.originalname : `${files.length} files`,
         fileSize: totalSize,
         fileCount: files.length,
@@ -85,6 +91,13 @@ export async function createBatch(files: Express.Multer.File[], ownerId: string)
 
     await saveBatch(batch)
 
+    log('info', 'batch.analysis_queued', {
+        requestId,
+        batchId: batch.id,
+        fileCount: batch.fileCount,
+        inputBytes: batch.fileSize,
+    })
+
     queueAnalysis(batch.id)
 
     return batch
@@ -97,6 +110,18 @@ export function queueAnalysis(id: string) {
 export async function analyzeBatch(id: string) {
     const batch = getBatch(id)
     if (!batch) return
+    const analysisStartedAt = Date.now()
+    const queuedAt = batch.queuedAt ? new Date(batch.queuedAt).getTime() : undefined
+    const queueWaitMs =
+        queuedAt === undefined ? undefined : Math.max(0, analysisStartedAt - queuedAt)
+
+    log('info', 'batch.analysis_started', {
+        requestId: batch.requestId,
+        batchId: id,
+        fileCount: batch.fileCount,
+        inputBytes: batch.fileSize,
+        queueWaitMs,
+    })
 
     const profiles: DatasetProfile[] = []
     const faults: BatchFault[] = []
@@ -210,19 +235,36 @@ export async function analyzeBatch(id: string) {
     await saveBatch({
         ...current,
         status: faults.length > 0 ? 'failed' : canResume ? 'queued' : 'awaiting_configuration',
+        ...(canResume ? { queuedAt: new Date().toISOString() } : {}),
         datasets: profiles,
         schemaGroups: [...groupMap.values()],
         faults,
     })
-    log(faults.length > 0 ? 'error' : 'info', 'batch.analyzed', {
-        batchId: id,
-        datasets: profiles.length,
-        faults: faults.length,
-    })
+    log(
+        faults.length > 0 ? 'error' : 'info',
+        faults.length > 0 ? 'batch.analysis_failed' : 'batch.analysis_completed',
+        {
+            requestId: batch.requestId,
+            batchId: id,
+            fileCount: batch.fileCount,
+            inputBytes: batch.fileSize,
+            queueWaitMs,
+            analysisDurationMs: Date.now() - analysisStartedAt,
+            datasets: profiles.length,
+            schemaGroups: groupMap.size,
+            faults: faults.length,
+            successCount: faults.length > 0 ? 0 : 1,
+            failureCount: faults.length > 0 ? 1 : 0,
+        },
+    )
     if (canResume) queueBatch(id)
 }
 
-export async function configureBatch(batch: BatchJob, configuration: BatchConfiguration) {
+export async function configureBatch(
+    batch: BatchJob,
+    configuration: BatchConfiguration,
+    requestId: string,
+) {
     if (batch.status !== 'awaiting_configuration')
         throw new Error('Batch analysis is not ready for configuration.')
     if (configuration.strategy === 'sqlite') {
@@ -240,7 +282,22 @@ export async function configureBatch(batch: BatchJob, configuration: BatchConfig
         if (configuration.strategy !== 'sqlite')
             throw new Error('Output format must be CSV, TSV, or JSON.')
     }
-    const configured = await saveBatch({ ...batch, configuration, status: 'queued', faults: [] })
+    const configured = await saveBatch({
+        ...batch,
+        requestId,
+        queuedAt: new Date().toISOString(),
+        configuration,
+        status: 'queued',
+        faults: [],
+    })
+    log('info', 'batch.queued', {
+        requestId,
+        batchId: batch.id,
+        strategy: configuration.strategy,
+        outputFormat: configuration.strategy === 'sqlite' ? 'SQLITE' : configuration.format,
+        fileCount: batch.fileCount,
+        inputBytes: batch.fileSize,
+    })
     queueBatch(batch.id)
     return configured
 }
@@ -502,6 +559,12 @@ async function createBatchResult(batch: BatchJob, datasets: Dataset[]) {
 export async function processBatch(id: string) {
     const batch = getBatch(id)
     if (!batch || batch.status !== 'queued' || !batch.configuration) return
+    const processingStartedAt = Date.now()
+    const queuedAt = batch.queuedAt ? new Date(batch.queuedAt).getTime() : undefined
+    const queueWaitMs =
+        queuedAt === undefined ? undefined : Math.max(0, processingStartedAt - queuedAt)
+    const outputFormat =
+        batch.configuration.strategy === 'sqlite' ? 'SQLITE' : batch.configuration.format
     await saveBatch({
         ...batch,
         status: 'processing',
@@ -509,20 +572,44 @@ export async function processBatch(id: string) {
         resultPath: null,
         resultFileName: null,
     })
+    log('info', 'batch.processing', {
+        requestId: batch.requestId,
+        batchId: id,
+        strategy: batch.configuration.strategy,
+        outputFormat,
+        fileCount: batch.fileCount,
+        inputBytes: batch.fileSize,
+        queueWaitMs,
+    })
 
     try {
         const datasets = await loadBatchDatasets(batch)
         const result = await createBatchResult(batch, datasets)
+        const resultStats = await stat(result.resultPath)
         const current = getBatch(id)
         if (!current) return
         await saveBatch({ ...current, ...result, status: 'completed' })
-        log('info', 'batch.completed', { batchId: id })
+        log('info', 'batch.completed', {
+            requestId: batch.requestId,
+            batchId: id,
+            strategy: batch.configuration.strategy,
+            outputFormat,
+            fileCount: batch.fileCount,
+            datasetCount: datasets.length,
+            inputBytes: batch.fileSize,
+            outputBytes: resultStats.size,
+            queueWaitMs,
+            processingDurationMs: Date.now() - processingStartedAt,
+            successCount: 1,
+            failureCount: 0,
+        })
         void Promise.all(
             batch.sources.map((source) => rm(source.sourcePath, { force: true })),
         ).catch((error) => {
             log('error', 'batch.source_cleanup_failed', {
+                requestId: batch.requestId,
                 batchId: id,
-                error: error instanceof Error ? error.message : String(error),
+                ...errorDetails(error),
             })
         })
     } catch (error) {
@@ -537,19 +624,40 @@ export async function processBatch(id: string) {
             resultFileName: null,
             faults: [fault('Batch', 'conversion_error', message)],
         })
-        log('error', 'batch.failed', { batchId: id, error: message })
+        log('error', 'batch.failed', {
+            requestId: batch.requestId,
+            batchId: id,
+            strategy: batch.configuration.strategy,
+            outputFormat,
+            fileCount: batch.fileCount,
+            inputBytes: batch.fileSize,
+            queueWaitMs,
+            processingDurationMs: Date.now() - processingStartedAt,
+            successCount: 0,
+            failureCount: 1,
+            ...errorDetails(error),
+        })
     }
 }
 
-export async function retryBatch(batch: BatchJob) {
+export async function retryBatch(batch: BatchJob, requestId: string) {
     const retried = await saveBatch({
         ...batch,
+        requestId,
+        queuedAt: new Date().toISOString(),
         status: 'analyzing',
         datasets: [],
         schemaGroups: [],
         faults: [],
         resultPath: null,
         resultFileName: null,
+    })
+    log('info', 'batch.analysis_queued', {
+        requestId,
+        batchId: batch.id,
+        fileCount: batch.fileCount,
+        inputBytes: batch.fileSize,
+        retry: true,
     })
     queueAnalysis(batch.id)
     return retried

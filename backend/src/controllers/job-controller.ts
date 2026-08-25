@@ -54,6 +54,7 @@ export async function createJobHandler(request: Request, response: Response) {
         format,
         request.body.splitSheets === 'true',
         request.guestOwnerId,
+        request.requestId,
     )
 
     return response.status(202).json({
@@ -76,7 +77,7 @@ export async function retryJobHandler(request: JobRequest, response: Response) {
         })
     }
 
-    const retriedJob = await retryJob(job)
+    const retriedJob = await retryJob(job, request.requestId)
 
     return response.status(202).json({
         job: toPublicJob(retriedJob),

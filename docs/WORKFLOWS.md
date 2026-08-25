@@ -112,10 +112,8 @@ sequenceDiagram
         Service->>Store: saveBatch(status=awaiting_configuration, schemaGroups)
     end
 
-    loop Every 2 seconds
-        Feed->>Client: getBatches()
-        Client-->>Feed: current guest batches
-    end
+    Feed->>Client: getActivity() immediately after upload
+    Client-->>Feed: current guest jobs and batches
     Feed-->>Workspace: updated batch prop
 ```
 
@@ -161,28 +159,25 @@ sequenceDiagram
     participant App
     participant Feed as useActivityFeed
     participant API as api.ts
-    participant Jobs as GET /api/jobs
-    participant Batches as GET /api/batches
-    participant Health as GET /health
+    participant Activity as GET /api/activity
     participant Table as ActivityTable
 
     App->>Feed: useActivityFeed()
-    loop Initial load and every 2 seconds
-        par Load owned jobs
-            Feed->>API: getJobs()
-            API->>Jobs: request with guest cookie
-            Jobs-->>Feed: ConversionJob[]
-        and Load owned batches
-            Feed->>API: getBatches()
-            API->>Batches: request with guest cookie
-            Batches-->>Feed: BatchJob[]
-        and Check service
-            Feed->>API: checkHealth()
-            API->>Health: GET
-            Health-->>Feed: status
-        end
+    Feed->>API: getActivity()
+    API->>Activity: request with guest cookie
+    Activity-->>Feed: jobs + batches
+    alt Active work
+        Feed->>Feed: schedule refresh in 2 seconds
+    else Idle
+        Feed->>Feed: schedule refresh in 30 seconds
+    else Request failed
+        Feed->>Feed: mark offline + exponential backoff to 60 seconds
+    end
+    loop While tab visible
+        Feed->>API: one adaptive activity request
         Feed->>Feed: setJobs, setBatches, setServiceOnline
     end
+    Note over Feed: Hidden tabs pause; visibility/focus and actions refresh immediately
     Feed-->>App: activity state and actions
     App->>Table: jobs, batches, callbacks
 ```
@@ -287,6 +282,31 @@ flowchart LR
 
     Post --> Create --> Store --> Queue --> Convert --> Read --> Result --> Complete --> Cleanup
 ```
+
+## Observability and Health
+
+```mermaid
+sequenceDiagram
+    actor Client
+    participant Context as requestContext middleware
+    participant API as Express route
+    participant Store as job/batch repository
+    participant Worker as in-process worker
+    participant Logs as JSON stdout/stderr
+
+    Client->>Context: HTTP request + optional X-Request-ID
+    Context->>Context: validate ID or generate UUID
+    Context-->>Client: X-Request-ID response header
+    Context->>API: request.requestId
+    API->>Store: persist private requestId + queuedAt
+    API-->>Client: accepted response
+    Context->>Logs: request.completed + duration/bytes/status
+    Store->>Worker: queued job or batch
+    Worker->>Logs: processing + queueWaitMs
+    Worker->>Logs: completed/failed + format/duration/bytes/outcome
+```
+
+`GET /health/live` proves the HTTP process can respond. `GET /health/ready` and its compatibility alias `GET /health` also verify initialization, read/write access to local persistence directories, and the current in-process queue provider. See `docs/OBSERVABILITY.md` for event fields and the future CloudWatch metric/alarm plan.
 
 ## Keeping This Guide Current
 

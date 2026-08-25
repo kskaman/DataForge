@@ -60,10 +60,6 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     return body
 }
 
-export async function getJobs() {
-    return (await request<{ jobs: ConversionJob[] }>('/api/jobs')).jobs
-}
-
 export async function createJob(file: File, format: OutputFormat, splitSheets: boolean) {
     const body = new FormData()
     body.append('file', file)
@@ -72,8 +68,8 @@ export async function createJob(file: File, format: OutputFormat, splitSheets: b
     return (await request<{ job: ConversionJob }>('/api/jobs', { method: 'POST', body })).job
 }
 
-export async function getBatches() {
-    return (await request<{ batches: BatchJob[] }>('/api/batches')).batches
+export async function getActivity() {
+    return await request<{ jobs: ConversionJob[]; batches: BatchJob[] }>('/api/activity')
 }
 
 export async function createBatch(files: File[]) {
@@ -116,8 +112,4 @@ export async function retryConversion(id: string) {
 export async function getDownloadUrl(id: string) {
     const result = await request<{ url: string }>(`/api/jobs/${id}/download`)
     return `${API_BASE}${result.url}`
-}
-
-export async function checkHealth() {
-    await request<{ status: string }>('/health')
 }

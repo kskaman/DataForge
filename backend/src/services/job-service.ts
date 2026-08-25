@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { rm, writeFile } from 'node:fs/promises'
+import { rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { config } from '../config.js'
 import {
@@ -11,26 +11,48 @@ import {
     sourceDirectory,
 } from '../repositories/job-store.js'
 import type { ConversionJob, OutputFormat } from '../types.js'
-import { log } from '../utils/logger.js'
+import { errorDetails, log } from '../utils/logger.js'
 import { convertJob } from './conversion-service.js'
 
 export function queueJob(id: string) {
     setImmediate(async () => {
         const job = getJob(id)
         if (!job || job.status !== 'queued') return
+        const processingStartedAt = Date.now()
+        const queuedAt = job.queuedAt ? new Date(job.queuedAt).getTime() : undefined
+        const queueWaitMs =
+            queuedAt === undefined ? undefined : Math.max(0, processingStartedAt - queuedAt)
 
         try {
             await saveJob({ ...job, status: 'processing', error: null })
-            log('info', 'job.processing', { jobId: id })
+            log('info', 'job.processing', {
+                requestId: job.requestId,
+                jobId: id,
+                outputFormat: job.format,
+                inputBytes: job.fileSize,
+                queueWaitMs,
+            })
             const result = await convertJob(job)
+            const resultStats = await stat(result.resultPath)
             const currentJob = getJob(id)
             if (!currentJob) return
             await saveJob({ ...currentJob, ...result, status: 'completed', error: null })
-            log('info', 'job.completed', { jobId: id })
+            log('info', 'job.completed', {
+                requestId: job.requestId,
+                jobId: id,
+                outputFormat: job.format,
+                inputBytes: job.fileSize,
+                outputBytes: resultStats.size,
+                queueWaitMs,
+                processingDurationMs: Date.now() - processingStartedAt,
+                successCount: 1,
+                failureCount: 0,
+            })
             void rm(job.sourcePath, { force: true }).catch((error) => {
                 log('error', 'job.source_cleanup_failed', {
+                    requestId: job.requestId,
                     jobId: id,
-                    error: error instanceof Error ? error.message : String(error),
+                    ...errorDetails(error),
                 })
             })
         } catch (error) {
@@ -44,7 +66,17 @@ export function queueJob(id: string) {
                 resultPath: null,
                 resultFileName: null,
             })
-            log('error', 'job.failed', { jobId: id, error: message })
+            log('error', 'job.failed', {
+                requestId: job.requestId,
+                jobId: id,
+                outputFormat: job.format,
+                inputBytes: job.fileSize,
+                queueWaitMs,
+                processingDurationMs: Date.now() - processingStartedAt,
+                successCount: 0,
+                failureCount: 1,
+                ...errorDetails(error),
+            })
         }
     })
 }
@@ -54,6 +86,7 @@ export async function createJob(
     format: OutputFormat,
     splitSheets: boolean,
     ownerId: string,
+    requestId: string,
 ) {
     const id = randomUUID()
     const extension = path.extname(file.originalname).slice(1).toLowerCase()
@@ -66,6 +99,8 @@ export async function createJob(
     const job: ConversionJob = {
         id,
         ownerId,
+        requestId,
+        queuedAt: new Date(now).toISOString(),
         fileName: path.basename(file.originalname),
         fileSize: file.size,
         format,
@@ -82,18 +117,21 @@ export async function createJob(
     await saveJob(job)
 
     log('info', 'job.queued', {
+        requestId,
         jobId: id,
-        fileName: job.fileName,
-        format,
+        outputFormat: format,
+        inputBytes: job.fileSize,
     })
 
     queueJob(id)
     return job
 }
 
-export async function retryJob(job: ConversionJob) {
+export async function retryJob(job: ConversionJob, requestId: string) {
     const retriedJob: ConversionJob = {
         ...job,
+        requestId,
+        queuedAt: new Date().toISOString(),
         status: 'queued',
         error: null,
         resultPath: null,
@@ -102,7 +140,12 @@ export async function retryJob(job: ConversionJob) {
 
     await saveJob(retriedJob)
 
-    log('info', 'job.retried', { jobId: job.id })
+    log('info', 'job.retried', {
+        requestId,
+        jobId: job.id,
+        outputFormat: job.format,
+        inputBytes: job.fileSize,
+    })
 
     queueJob(job.id)
     return retriedJob

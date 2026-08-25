@@ -11,7 +11,7 @@ export async function createBatchHandler(request: Request, response: Response) {
     const files = Array.isArray(request.files) ? request.files : []
 
     try {
-        const batch = await createBatch(files, request.guestOwnerId)
+        const batch = await createBatch(files, request.guestOwnerId, request.requestId)
         return response.status(202).json({ batch: toPublicBatchJob(batch) })
     } catch (error) {
         await Promise.all(files.map((file) => rm(file.path, { force: true })))
@@ -36,7 +36,11 @@ export async function configureBatchHandler(request: BatchRequest, response: Res
     const batch = getBatchForOwner(request.params.id, request.guestOwnerId)
     if (!batch) return response.status(404).json({ error: 'Batch not found.' })
     try {
-        const configured = await configureBatch(batch, request.body as BatchConfiguration)
+        const configured = await configureBatch(
+            batch,
+            request.body as BatchConfiguration,
+            request.requestId,
+        )
         return response.status(202).json({ batch: toPublicBatchJob(configured) })
     } catch (error) {
         return response
@@ -50,7 +54,9 @@ export async function retryBatchHandler(request: BatchRequest, response: Respons
     if (!batch) return response.status(404).json({ error: 'Batch not found.' })
     if (batch.status !== 'failed')
         return response.status(409).json({ error: 'Only failed batches can be retried.' })
-    return response.status(202).json({ batch: toPublicBatchJob(await retryBatch(batch)) })
+    return response
+        .status(202)
+        .json({ batch: toPublicBatchJob(await retryBatch(batch, request.requestId)) })
 }
 
 export function getBatchDownloadHandler(request: BatchRequest, response: Response) {

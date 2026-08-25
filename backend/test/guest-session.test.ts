@@ -41,6 +41,8 @@ test('public records redact owner and server paths', () => {
     const job: ConversionJob = {
         id: 'job-id',
         ownerId: 'private-owner',
+        requestId: 'private-request',
+        queuedAt: new Date(0).toISOString(),
         fileName: 'source.csv',
         fileSize: 10,
         format: 'JSON',
@@ -56,6 +58,8 @@ test('public records redact owner and server paths', () => {
     const batch: BatchJob = {
         id: 'batch-id',
         ownerId: 'private-owner',
+        requestId: 'private-request',
+        queuedAt: new Date(0).toISOString(),
         fileName: '1 file',
         fileSize: 10,
         fileCount: 1,
@@ -85,4 +89,8 @@ test('public records redact owner and server paths', () => {
     ])
     assert.deepEqual(toPublicBatchJob(batch).sources, [{ fileName: 'source.csv', fileSize: 10 }])
     assert.equal('ownerId' in toPublicBatchJob(batch), false)
+    assert.equal('requestId' in toPublicJob(job), false)
+    assert.equal('queuedAt' in toPublicJob(job), false)
+    assert.equal('requestId' in toPublicBatchJob(batch), false)
+    assert.equal('queuedAt' in toPublicBatchJob(batch), false)
 })
