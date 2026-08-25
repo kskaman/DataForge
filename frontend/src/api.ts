@@ -1,3 +1,5 @@
+import { config } from './config'
+
 export type OutputFormat = 'CSV' | 'TSV' | 'JSON'
 export type JobStatus = 'queued' | 'processing' | 'completed' | 'failed'
 export type BatchStatus =
@@ -51,10 +53,11 @@ export type BatchJob = {
     resultFileName?: string
 }
 
-const API_BASE = import.meta.env.VITE_API_URL ?? ''
-
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-    const response = await fetch(`${API_BASE}${path}`, { ...options, credentials: 'include' })
+    const response = await fetch(`${config.apiBaseUrl}${path}`, {
+        ...options,
+        credentials: 'include',
+    })
     const body = (await response.json()) as T & { error?: string }
     if (!response.ok) throw new Error(body.error ?? 'The request could not be completed.')
     return body
@@ -102,7 +105,7 @@ export async function retryBatch(id: string) {
 
 export async function getBatchDownloadUrl(id: string) {
     const result = await request<{ url: string }>(`/api/batches/${id}/download`)
-    return `${API_BASE}${result.url}`
+    return `${config.apiBaseUrl}${result.url}`
 }
 
 export async function retryConversion(id: string) {
@@ -111,5 +114,5 @@ export async function retryConversion(id: string) {
 
 export async function getDownloadUrl(id: string) {
     const result = await request<{ url: string }>(`/api/jobs/${id}/download`)
-    return `${API_BASE}${result.url}`
+    return `${config.apiBaseUrl}${result.url}`
 }

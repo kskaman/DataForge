@@ -11,7 +11,11 @@ npm run dev
 
 The API listens on `http://localhost:4000`. In another terminal, start the frontend from `../frontend` with `npm run dev`. Vite proxies `/api` and `/health` to the backend.
 
-Environment variables are listed in `.env.example`. Set them in the shell or deployment environment before starting the process.
+Copy `.env.example` to `.env` for local configuration. The backend loads `backend/.env` automatically regardless of the launch directory, and variables already supplied by the shell or deployment platform take precedence. The checked-in example contains no usable production secrets; `.env` and its variants are ignored by Git.
+
+`src/config.ts` is the only application module that reads `process.env`. It defines the supported `ENV` names, a reusable `getOrThrow()` helper, type/value validation, development defaults, and the normalized `config` object consumed by the rest of the backend.
+
+Local development only needs `PORT` or `FRONTEND_ORIGIN` when their defaults are unsuitable. Production requires `NODE_ENV=production`, `GUEST_SESSION_SECRET`, and `DOWNLOAD_SECRET`. Rate limits and proxy hops remain optional with validated defaults.
 
 Production should serve the frontend and API from the same site through a TLS reverse proxy. Set unique `GUEST_SESSION_SECRET` and `DOWNLOAD_SECRET` values of at least 32 characters; startup fails in production when either value is missing, insecure, or reused. Set `TRUST_PROXY_HOPS` to the exact number of trusted reverse proxies in front of the API. Anonymous history is associated with an `HttpOnly`, `Secure` production cookie and cannot be recovered after that cookie is cleared.
 

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import express, { type Express } from 'express'
 import { app } from '../src/app.js'
-import { loadConfig } from '../src/config.js'
+import { ENV, getOrThrow, loadConfig } from '../src/config.js'
 import { createRateLimiter } from '../src/middleware/security.js'
 import { publicErrorMessage } from '../src/utils/public-error.js'
 
@@ -39,6 +39,19 @@ test('production requires strong distinct signing secrets', () => {
         () => loadConfig({ ...production, DOWNLOAD_SECRET: 'replace-with-a-long-random-value' }),
         /DOWNLOAD_SECRET/,
     )
+})
+
+test('environment helpers reject missing and malformed configuration', () => {
+    assert.equal(getOrThrow({ PORT: '4100' }, ENV.port), '4100')
+    assert.throws(() => getOrThrow({}, ENV.port), /PORT is required/)
+    assert.throws(() => getOrThrow({ PORT: '   ' }, ENV.port), /PORT is required/)
+    assert.throws(() => loadConfig({ NODE_ENV: 'staging' }), /NODE_ENV/)
+    assert.throws(() => loadConfig({ PORT: 'not-a-number' }), /PORT/)
+    assert.throws(
+        () => loadConfig({ FRONTEND_ORIGIN: 'https://example.com/path' }),
+        /FRONTEND_ORIGIN/,
+    )
+    assert.equal(loadConfig({ NODE_ENV: 'test', PORT: '4100' }).environment, 'test')
 })
 
 test('unexpected production errors do not expose internal messages', () => {

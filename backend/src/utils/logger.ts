@@ -1,3 +1,5 @@
+import { config } from '../config.js'
+
 export type LogLevel = 'info' | 'warn' | 'error'
 
 export function errorDetails(error: unknown) {
@@ -11,7 +13,7 @@ export function log(level: LogLevel, event: string, details: Record<string, unkn
         timestamp: new Date().toISOString(),
         level,
         service: 'dataforge-api',
-        environment: process.env.NODE_ENV ?? 'development',
+        environment: config.environment,
         event,
         ...details,
     })

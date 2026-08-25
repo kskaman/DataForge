@@ -26,6 +26,12 @@ DataForge has no accounts. Access to history and results is bound to a random an
 7. Tune `API_RATE_LIMIT` and `WRITE_RATE_LIMIT` from observed production traffic before launch.
 8. Restrict runtime filesystem and container permissions to the directories DataForge needs.
 
+## Environment Boundary
+
+The backend loads `backend/.env` for local use and then exposes only the validated object from `src/config.ts`. Existing process variables take precedence over the file. Required production variables are read through `getOrThrow()`, and startup stops before listening when a required or malformed value is detected.
+
+The frontend separately validates optional `VITE_API_URL` in `src/config.ts`. Vite embeds every `VITE_*` variable in public browser JavaScript. Backend signing secrets must only exist in the backend process or deployment secret manager and must never use a `VITE_` prefix.
+
 ## AWS Boundary
 
 The current rate-limit counters live in each Node.js process. They are useful for accidental abuse and single-instance deployments but are not a distributed security boundary. When DataForge scales across instances, enforce public request limits at AWS WAF/API Gateway or use a shared rate-limit store.
