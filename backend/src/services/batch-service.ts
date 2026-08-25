@@ -23,6 +23,8 @@ import type {
 } from '../types.js'
 
 import { errorDetails, log } from '../utils/logger.js'
+import { ClientError } from '../utils/client-error.js'
+import { publicErrorMessage } from '../utils/public-error.js'
 import { createArchive, datasetContent, safeName } from './conversion-service.js'
 
 import { readDatasets, type Dataset } from './dataset-service.js'
@@ -57,10 +59,10 @@ export async function createBatch(
 ) {
     const totalSize = files.reduce((sum, file) => sum + file.size, 0)
 
-    if (files.length === 0) throw new Error('Select at least one file.')
+    if (files.length === 0) throw new ClientError('Select at least one file.', 400)
 
     if (totalSize > aggregateSizeLimit) {
-        throw new Error('Batch size must be 200 MB or less.')
+        throw new ClientError('Batch size must be 200 MB or less.', 400)
     }
 
     const now = Date.now()
@@ -223,7 +225,7 @@ export async function analyzeBatch(id: string) {
                 fault(
                     source.fileName,
                     'parse_error',
-                    error instanceof Error ? error.message : 'The file could not be read.',
+                    publicErrorMessage(error, 'The file could not be read.', config.production),
                 ),
             )
         }
@@ -266,13 +268,13 @@ export async function configureBatch(
     requestId: string,
 ) {
     if (batch.status !== 'awaiting_configuration')
-        throw new Error('Batch analysis is not ready for configuration.')
+        throw new ClientError('Batch analysis is not ready for configuration.', 409)
     if (configuration.strategy === 'sqlite') {
         if (
             configuration.sqliteLayout !== 'per_source' &&
             configuration.sqliteLayout !== 'grouped'
         ) {
-            throw new Error('Choose a SQLite table layout.')
+            throw new ClientError('Choose a SQLite table layout.', 409)
         }
     }
     if (
@@ -280,7 +282,7 @@ export async function configureBatch(
         !(['CSV', 'TSV', 'JSON'] as OutputFormat[]).includes(configuration.format)
     ) {
         if (configuration.strategy !== 'sqlite')
-            throw new Error('Output format must be CSV, TSV, or JSON.')
+            throw new ClientError('Output format must be CSV, TSV, or JSON.', 409)
     }
     const configured = await saveBatch({
         ...batch,
@@ -616,7 +618,7 @@ export async function processBatch(id: string) {
         const current = getBatch(id)
         if (!current) return
         if (current.resultPath) await rm(current.resultPath, { force: true })
-        const message = error instanceof Error ? error.message : 'Batch conversion failed.'
+        const message = publicErrorMessage(error, 'Batch conversion failed.', config.production)
         await saveBatch({
             ...current,
             status: 'failed',

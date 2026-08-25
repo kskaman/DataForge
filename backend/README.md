@@ -11,9 +11,21 @@ npm run dev
 
 The API listens on `http://localhost:4000`. In another terminal, start the frontend from `../frontend` with `npm run dev`. Vite proxies `/api` and `/health` to the backend.
 
-Optional environment variables are listed in `.env.example`. Set them in the shell or deployment environment before starting the process.
+Environment variables are listed in `.env.example`. Set them in the shell or deployment environment before starting the process.
 
-Production should serve the frontend and API from the same site through a reverse proxy. Set `GUEST_SESSION_SECRET` to a long random value; startup fails in production when it is missing. Anonymous history is associated with an `HttpOnly` browser cookie and cannot be recovered after that cookie is cleared.
+Production should serve the frontend and API from the same site through a TLS reverse proxy. Set unique `GUEST_SESSION_SECRET` and `DOWNLOAD_SECRET` values of at least 32 characters; startup fails in production when either value is missing, insecure, or reused. Set `TRUST_PROXY_HOPS` to the exact number of trusted reverse proxies in front of the API. Anonymous history is associated with an `HttpOnly`, `Secure` production cookie and cannot be recovered after that cookie is cleared.
+
+## Security controls
+
+- Helmet applies browser security headers; HSTS is enabled only in production.
+- CORS allows only `FRONTEND_ORIGIN` and includes credentials for the anonymous guest cookie.
+- Unsafe browser requests must have the configured origin and cannot be marked cross-site by Fetch Metadata headers.
+- API reads are limited per guest to `API_RATE_LIMIT` requests per 15 minutes. Conversion/configuration/retry writes are additionally limited per client IP to `WRITE_RATE_LIMIT` requests per 15 minutes.
+- JSON bodies are limited to 32 KB. Uploads remain limited to 50 MB per file, 20 batch files, and 200 MB per batch.
+- Route IDs, download signatures, upload fields, and batch configurations are strictly validated before controller logic.
+- Unexpected production errors use generic client messages while structured server logs retain diagnostic details without guest tokens or file contents.
+
+The default rate-limit store is in-process and therefore applies per API instance. Keep it for local/single-instance deployment; use an AWS edge control or shared rate-limit store when the deployment milestone introduces multiple instances. See [`../docs/SECURITY.md`](../docs/SECURITY.md) for the deployment checklist and trust boundaries.
 
 ## API
 

@@ -8,6 +8,13 @@ import {
     listJobHandler,
     retryJobHandler,
 } from '../controllers/job-controller.js'
+import { writeRateLimiter } from '../middleware/security.js'
+import {
+    downloadQuerySchema,
+    idParamsSchema,
+    jobUploadFieldsSchema,
+    validateRequest,
+} from '../middleware/validation.js'
 
 const upload = multer({
     storage: multer.memoryStorage(),
@@ -17,8 +24,24 @@ const upload = multer({
 export const jobRouter = Router()
 
 jobRouter.get('/jobs', listJobHandler)
-jobRouter.get('/jobs/:id', getJobHandler)
-jobRouter.post('/jobs', upload.single('file'), createJobHandler)
-jobRouter.post('/jobs/:id/retry', retryJobHandler)
-jobRouter.get('/jobs/:id/download', getDownloadHandler)
-jobRouter.get('/downloads/:id', downloadHandler)
+jobRouter.get('/jobs/:id', validateRequest(idParamsSchema, 'params'), getJobHandler)
+jobRouter.post(
+    '/jobs',
+    writeRateLimiter,
+    upload.single('file'),
+    validateRequest(jobUploadFieldsSchema, 'body'),
+    createJobHandler,
+)
+jobRouter.post(
+    '/jobs/:id/retry',
+    writeRateLimiter,
+    validateRequest(idParamsSchema, 'params'),
+    retryJobHandler,
+)
+jobRouter.get('/jobs/:id/download', validateRequest(idParamsSchema, 'params'), getDownloadHandler)
+jobRouter.get(
+    '/downloads/:id',
+    validateRequest(idParamsSchema, 'params'),
+    validateRequest(downloadQuerySchema, 'query'),
+    downloadHandler,
+)

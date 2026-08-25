@@ -12,6 +12,7 @@ import {
 } from '../repositories/job-store.js'
 import type { ConversionJob, OutputFormat } from '../types.js'
 import { errorDetails, log } from '../utils/logger.js'
+import { publicErrorMessage } from '../utils/public-error.js'
 import { convertJob } from './conversion-service.js'
 
 export function queueJob(id: string) {
@@ -58,7 +59,7 @@ export function queueJob(id: string) {
         } catch (error) {
             const currentJob = getJob(id)
             if (!currentJob) return
-            const message = error instanceof Error ? error.message : 'Conversion failed.'
+            const message = publicErrorMessage(error, 'Conversion failed.', config.production)
             await saveJob({
                 ...currentJob,
                 status: 'failed',

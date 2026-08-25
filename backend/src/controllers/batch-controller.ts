@@ -3,6 +3,7 @@ import type { Request, Response } from 'express'
 import { configureBatch, createBatch, retryBatch } from '../services/batch-service.js'
 import { getBatchForOwner, listBatchesForOwner } from '../repositories/batch-store.js'
 import { toPublicBatchJob, type BatchConfiguration } from '../types.js'
+import { ClientError } from '../utils/client-error.js'
 import { hasValidSignature, signDownload } from '../utils/download-token.js'
 
 type BatchRequest = Request<{ id: string }>
@@ -15,8 +16,10 @@ export async function createBatchHandler(request: Request, response: Response) {
         return response.status(202).json({ batch: toPublicBatchJob(batch) })
     } catch (error) {
         await Promise.all(files.map((file) => rm(file.path, { force: true })))
-        const message = error instanceof Error ? error.message : 'Batch upload failed.'
-        return response.status(400).json({ error: message })
+        if (error instanceof ClientError) {
+            return response.status(error.statusCode).json({ error: error.message })
+        }
+        throw error
     }
 }
 
@@ -43,9 +46,10 @@ export async function configureBatchHandler(request: BatchRequest, response: Res
         )
         return response.status(202).json({ batch: toPublicBatchJob(configured) })
     } catch (error) {
-        return response
-            .status(409)
-            .json({ error: error instanceof Error ? error.message : 'Batch configuration failed.' })
+        if (error instanceof ClientError) {
+            return response.status(error.statusCode).json({ error: error.message })
+        }
+        throw error
     }
 }
 

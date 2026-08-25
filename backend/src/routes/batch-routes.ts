@@ -12,6 +12,13 @@ import {
     listBatchHandler,
     retryBatchHandler,
 } from '../controllers/batch-controller.js'
+import { writeRateLimiter } from '../middleware/security.js'
+import {
+    batchConfigurationSchema,
+    downloadQuerySchema,
+    idParamsSchema,
+    validateRequest,
+} from '../middleware/validation.js'
 import { batchSourceDirectory } from '../repositories/batch-store.js'
 
 const upload = multer({
@@ -38,9 +45,29 @@ function uploadBatch(request: Request, response: Response, next: NextFunction) {
 export const batchRouter = Router()
 
 batchRouter.get('/batches', listBatchHandler)
-batchRouter.get('/batches/:id', getBatchHandler)
-batchRouter.post('/batches', uploadBatch, createBatchHandler)
-batchRouter.post('/batches/:id/configure', configureBatchHandler)
-batchRouter.post('/batches/:id/retry', retryBatchHandler)
-batchRouter.get('/batches/:id/download', getBatchDownloadHandler)
-batchRouter.get('/batch-downloads/:id', batchDownloadHandler)
+batchRouter.get('/batches/:id', validateRequest(idParamsSchema, 'params'), getBatchHandler)
+batchRouter.post('/batches', writeRateLimiter, uploadBatch, createBatchHandler)
+batchRouter.post(
+    '/batches/:id/configure',
+    writeRateLimiter,
+    validateRequest(idParamsSchema, 'params'),
+    validateRequest(batchConfigurationSchema, 'body'),
+    configureBatchHandler,
+)
+batchRouter.post(
+    '/batches/:id/retry',
+    writeRateLimiter,
+    validateRequest(idParamsSchema, 'params'),
+    retryBatchHandler,
+)
+batchRouter.get(
+    '/batches/:id/download',
+    validateRequest(idParamsSchema, 'params'),
+    getBatchDownloadHandler,
+)
+batchRouter.get(
+    '/batch-downloads/:id',
+    validateRequest(idParamsSchema, 'params'),
+    validateRequest(downloadQuerySchema, 'query'),
+    batchDownloadHandler,
+)
