@@ -1,15 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
+import { jobSourceDirectory } from '../adapters/local/storage-paths.js'
 import { config } from '../config.js'
-import {
-    getJob,
-    initializeStore,
-    listJobs,
-    removeJob,
-    saveJob,
-    sourceDirectory,
-} from '../repositories/job-store.js'
+import { repositories } from '../dependencies.js'
 import type { ConversionJob, OutputFormat } from '../types.js'
 import { errorDetails, log } from '../utils/logger.js'
 import { publicErrorMessage } from '../utils/public-error.js'
@@ -17,7 +11,7 @@ import { convertJob } from './conversion-service.js'
 
 export function queueJob(id: string) {
     setImmediate(async () => {
-        const job = getJob(id)
+        const job = await repositories.jobs.get(id)
         if (!job || job.status !== 'queued') return
         const processingStartedAt = Date.now()
         const queuedAt = job.queuedAt ? new Date(job.queuedAt).getTime() : undefined
@@ -25,7 +19,7 @@ export function queueJob(id: string) {
             queuedAt === undefined ? undefined : Math.max(0, processingStartedAt - queuedAt)
 
         try {
-            await saveJob({ ...job, status: 'processing', error: null })
+            await repositories.jobs.save({ ...job, status: 'processing', error: null })
             log('info', 'job.processing', {
                 requestId: job.requestId,
                 jobId: id,
@@ -35,9 +29,14 @@ export function queueJob(id: string) {
             })
             const result = await convertJob(job)
             const resultStats = await stat(result.resultPath)
-            const currentJob = getJob(id)
+            const currentJob = await repositories.jobs.get(id)
             if (!currentJob) return
-            await saveJob({ ...currentJob, ...result, status: 'completed', error: null })
+            await repositories.jobs.save({
+                ...currentJob,
+                ...result,
+                status: 'completed',
+                error: null,
+            })
             log('info', 'job.completed', {
                 requestId: job.requestId,
                 jobId: id,
@@ -57,10 +56,10 @@ export function queueJob(id: string) {
                 })
             })
         } catch (error) {
-            const currentJob = getJob(id)
+            const currentJob = await repositories.jobs.get(id)
             if (!currentJob) return
             const message = publicErrorMessage(error, 'Conversion failed.', config.production)
-            await saveJob({
+            await repositories.jobs.save({
                 ...currentJob,
                 status: 'failed',
                 error: message,
@@ -91,7 +90,7 @@ export async function createJob(
 ) {
     const id = randomUUID()
     const extension = path.extname(file.originalname).slice(1).toLowerCase()
-    const sourcePath = path.join(sourceDirectory, `${id}.${extension}`)
+    const sourcePath = path.join(jobSourceDirectory, `${id}.${extension}`)
 
     await writeFile(sourcePath, file.buffer)
 
@@ -115,7 +114,7 @@ export async function createJob(
         resultFileName: null,
     }
 
-    await saveJob(job)
+    await repositories.jobs.save(job)
 
     log('info', 'job.queued', {
         requestId,
@@ -139,7 +138,7 @@ export async function retryJob(job: ConversionJob, requestId: string) {
         resultFileName: null,
     }
 
-    await saveJob(retriedJob)
+    await repositories.jobs.save(retriedJob)
 
     log('info', 'job.retried', {
         requestId,
@@ -153,7 +152,9 @@ export async function retryJob(job: ConversionJob, requestId: string) {
 }
 
 export async function cleanupExpiredJobs() {
-    const expiredJobs = listJobs().filter((job) => new Date(job.expiresAt).getTime() <= Date.now())
+    const expiredJobs = (await repositories.jobs.list()).filter(
+        (job) => new Date(job.expiresAt).getTime() <= Date.now(),
+    )
 
     for (const job of expiredJobs) {
         await Promise.all([
@@ -161,24 +162,28 @@ export async function cleanupExpiredJobs() {
             job.resultPath ? rm(job.resultPath, { force: true }) : Promise.resolve(),
         ])
 
-        await removeJob(job.id)
+        await repositories.jobs.remove(job.id)
 
         log('info', 'job.expired', { jobId: job.id })
     }
 }
 
 export async function initializeJobs() {
-    await initializeStore()
+    await repositories.jobs.initialize()
     await cleanupExpiredJobs()
 
-    listJobs()
-        .filter((job) => job.status === 'queued' || job.status === 'processing')
-        .forEach((job) => {
-            void saveJob({
+    const unfinishedJobs = (await repositories.jobs.list()).filter(
+        (job) => job.status === 'queued' || job.status === 'processing',
+    )
+
+    unfinishedJobs.forEach((job) => {
+        void repositories.jobs
+            .save({
                 ...job,
                 status: 'queued',
-            }).then(() => queueJob(job.id))
-        })
+            })
+            .then(() => queueJob(job.id))
+    })
 
     setInterval(() => void cleanupExpiredJobs(), 60 * 60 * 1000).unref()
 }

@@ -3,6 +3,7 @@ import { rm } from 'node:fs/promises'
 import path from 'node:path'
 import { Router, type NextFunction, type Request, type Response } from 'express'
 import multer from 'multer'
+import { batchSourceDirectory } from '../adapters/local/storage-paths.js'
 import {
     batchDownloadHandler,
     configureBatchHandler,
@@ -19,7 +20,6 @@ import {
     idParamsSchema,
     validateRequest,
 } from '../middleware/validation.js'
-import { batchSourceDirectory } from '../repositories/batch-store.js'
 
 const upload = multer({
     storage: multer.diskStorage({

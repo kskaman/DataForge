@@ -1,11 +1,12 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
-import path from 'node:path'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import {
+    batchResultDirectory,
+    batchesMetadataPath,
+    batchSourceDirectory,
+} from '../adapters/local/storage-paths.js'
+import type { BatchRepository } from '../contracts/batch-repository.js'
 import type { BatchJob } from '../types.js'
-import { storageRoot } from './job-store.js'
-
-export const batchSourceDirectory = path.join(storageRoot, 'batch-sources')
-export const batchResultDirectory = path.join(storageRoot, 'batch-results')
-const batchesPath = path.join(storageRoot, 'batches.json')
+import { replaceFile } from '../adapters/local/atomic-file.js'
 
 let batches = new Map<string, BatchJob>()
 let writeQueue = Promise.resolve()
@@ -17,7 +18,7 @@ export async function initializeBatchStore() {
     ])
 
     try {
-        const savedBatches = JSON.parse(await readFile(batchesPath, 'utf8')) as BatchJob[]
+        const savedBatches = JSON.parse(await readFile(batchesMetadataPath, 'utf8')) as BatchJob[]
         batches = new Map(savedBatches.map((batch) => [batch.id, batch]))
     } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
@@ -25,9 +26,9 @@ export async function initializeBatchStore() {
 }
 
 async function persist() {
-    const temporaryPath = `${batchesPath}.tmp`
+    const temporaryPath = `${batchesMetadataPath}.tmp`
     await writeFile(temporaryPath, JSON.stringify([...batches.values()], null, 2))
-    await rename(temporaryPath, batchesPath)
+    await replaceFile(temporaryPath, batchesMetadataPath)
 }
 
 function schedulePersist() {
@@ -63,4 +64,14 @@ export async function saveBatch(batch: BatchJob) {
 export async function removeBatch(id: string) {
     batches.delete(id)
     await schedulePersist()
+}
+
+export const localBatchRepository: BatchRepository = {
+    initialize: initializeBatchStore,
+    list: async () => listBatches(),
+    get: async (id) => getBatch(id),
+    listForOwner: async (ownerId) => listBatchesForOwner(ownerId),
+    getForOwner: async (id, ownerId) => getBatchForOwner(id, ownerId),
+    save: saveBatch,
+    remove: removeBatch,
 }

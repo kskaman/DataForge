@@ -1,7 +1,12 @@
 import { constants } from 'node:fs'
 import { access } from 'node:fs/promises'
-import { batchResultDirectory, batchSourceDirectory } from '../repositories/batch-store.js'
-import { resultDirectory, sourceDirectory, storageRoot } from '../repositories/job-store.js'
+import {
+    batchResultDirectory,
+    batchSourceDirectory,
+    jobResultDirectory,
+    jobSourceDirectory,
+    storageRoot,
+} from '../adapters/local/storage-paths.js'
 
 let applicationInitialized = false
 
@@ -24,8 +29,8 @@ export async function readinessReport() {
         await Promise.all(
             [
                 storageRoot,
-                sourceDirectory,
-                resultDirectory,
+                jobSourceDirectory,
+                jobResultDirectory,
                 batchSourceDirectory,
                 batchResultDirectory,
             ].map((directory) => access(directory, constants.R_OK | constants.W_OK)),

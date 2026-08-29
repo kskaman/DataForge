@@ -2,16 +2,9 @@ import { randomUUID } from 'node:crypto'
 import { rename, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import Database from 'better-sqlite3'
+import { batchResultDirectory } from '../adapters/local/storage-paths.js'
 import { config } from '../config.js'
-
-import {
-    batchResultDirectory,
-    getBatch,
-    initializeBatchStore,
-    listBatches,
-    removeBatch,
-    saveBatch,
-} from '../repositories/batch-store.js'
+import { repositories } from '../dependencies.js'
 
 import type {
     BatchConfiguration,
@@ -91,7 +84,7 @@ export async function createBatch(
         resultFileName: null,
     }
 
-    await saveBatch(batch)
+    await repositories.batches.save(batch)
 
     log('info', 'batch.analysis_queued', {
         requestId,
@@ -110,7 +103,7 @@ export function queueAnalysis(id: string) {
 }
 
 export async function analyzeBatch(id: string) {
-    const batch = getBatch(id)
+    const batch = await repositories.batches.get(id)
     if (!batch) return
     const analysisStartedAt = Date.now()
     const queuedAt = batch.queuedAt ? new Date(batch.queuedAt).getTime() : undefined
@@ -231,10 +224,10 @@ export async function analyzeBatch(id: string) {
         }
     }
 
-    const current = getBatch(id)
+    const current = await repositories.batches.get(id)
     if (!current) return
     const canResume = faults.length === 0 && current.configuration !== null
-    await saveBatch({
+    await repositories.batches.save({
         ...current,
         status: faults.length > 0 ? 'failed' : canResume ? 'queued' : 'awaiting_configuration',
         ...(canResume ? { queuedAt: new Date().toISOString() } : {}),
@@ -284,7 +277,7 @@ export async function configureBatch(
         if (configuration.strategy !== 'sqlite')
             throw new ClientError('Output format must be CSV, TSV, or JSON.', 409)
     }
-    const configured = await saveBatch({
+    const configured = await repositories.batches.save({
         ...batch,
         requestId,
         queuedAt: new Date().toISOString(),
@@ -559,7 +552,7 @@ async function createBatchResult(batch: BatchJob, datasets: Dataset[]) {
 }
 
 export async function processBatch(id: string) {
-    const batch = getBatch(id)
+    const batch = await repositories.batches.get(id)
     if (!batch || batch.status !== 'queued' || !batch.configuration) return
     const processingStartedAt = Date.now()
     const queuedAt = batch.queuedAt ? new Date(batch.queuedAt).getTime() : undefined
@@ -567,7 +560,7 @@ export async function processBatch(id: string) {
         queuedAt === undefined ? undefined : Math.max(0, processingStartedAt - queuedAt)
     const outputFormat =
         batch.configuration.strategy === 'sqlite' ? 'SQLITE' : batch.configuration.format
-    await saveBatch({
+    await repositories.batches.save({
         ...batch,
         status: 'processing',
         faults: [],
@@ -588,9 +581,9 @@ export async function processBatch(id: string) {
         const datasets = await loadBatchDatasets(batch)
         const result = await createBatchResult(batch, datasets)
         const resultStats = await stat(result.resultPath)
-        const current = getBatch(id)
+        const current = await repositories.batches.get(id)
         if (!current) return
-        await saveBatch({ ...current, ...result, status: 'completed' })
+        await repositories.batches.save({ ...current, ...result, status: 'completed' })
         log('info', 'batch.completed', {
             requestId: batch.requestId,
             batchId: id,
@@ -615,11 +608,11 @@ export async function processBatch(id: string) {
             })
         })
     } catch (error) {
-        const current = getBatch(id)
+        const current = await repositories.batches.get(id)
         if (!current) return
         if (current.resultPath) await rm(current.resultPath, { force: true })
         const message = publicErrorMessage(error, 'Batch conversion failed.', config.production)
-        await saveBatch({
+        await repositories.batches.save({
             ...current,
             status: 'failed',
             resultPath: null,
@@ -643,7 +636,7 @@ export async function processBatch(id: string) {
 }
 
 export async function retryBatch(batch: BatchJob, requestId: string) {
-    const retried = await saveBatch({
+    const retried = await repositories.batches.save({
         ...batch,
         requestId,
         queuedAt: new Date().toISOString(),
@@ -666,7 +659,7 @@ export async function retryBatch(batch: BatchJob, requestId: string) {
 }
 
 export async function cleanupExpiredBatches() {
-    const expired = listBatches().filter(
+    const expired = (await repositories.batches.list()).filter(
         (batch) => new Date(batch.expiresAt).getTime() <= Date.now(),
     )
     for (const batch of expired) {
@@ -674,18 +667,18 @@ export async function cleanupExpiredBatches() {
             ...batch.sources.map((source) => rm(source.sourcePath, { force: true })),
             batch.resultPath ? rm(batch.resultPath, { force: true }) : Promise.resolve(),
         ])
-        await removeBatch(batch.id)
+        await repositories.batches.remove(batch.id)
         log('info', 'batch.expired', { batchId: batch.id })
     }
 }
 
 export async function initializeBatches() {
-    await initializeBatchStore()
+    await repositories.batches.initialize()
     await cleanupExpiredBatches()
-    for (const batch of listBatches()) {
+    for (const batch of await repositories.batches.list()) {
         if (batch.status === 'analyzing') queueAnalysis(batch.id)
         if (batch.status === 'queued' || batch.status === 'processing') {
-            await saveBatch({ ...batch, status: 'queued' })
+            await repositories.batches.save({ ...batch, status: 'queued' })
             queueBatch(batch.id)
         }
     }

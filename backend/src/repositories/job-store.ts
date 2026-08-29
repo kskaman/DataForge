@@ -1,23 +1,24 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
-import path from 'node:path'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import {
+    jobResultDirectory,
+    jobSourceDirectory,
+    jobsMetadataPath,
+} from '../adapters/local/storage-paths.js'
+import type { JobRepository } from '../contracts/job-repository.js'
 import type { ConversionJob } from '../types.js'
-
-export const storageRoot = path.resolve(import.meta.dirname, '..', '..', 'storage')
-export const sourceDirectory = path.join(storageRoot, 'sources')
-export const resultDirectory = path.join(storageRoot, 'results')
-const jobsPath = path.join(storageRoot, 'jobs.json')
+import { replaceFile } from '../adapters/local/atomic-file.js'
 
 let jobs = new Map<string, ConversionJob>()
 let writeQueue = Promise.resolve()
 
 export async function initializeStore() {
     await Promise.all([
-        mkdir(sourceDirectory, { recursive: true }),
-        mkdir(resultDirectory, { recursive: true }),
+        mkdir(jobSourceDirectory, { recursive: true }),
+        mkdir(jobResultDirectory, { recursive: true }),
     ])
 
     try {
-        const savedJobs = JSON.parse(await readFile(jobsPath, 'utf8')) as ConversionJob[]
+        const savedJobs = JSON.parse(await readFile(jobsMetadataPath, 'utf8')) as ConversionJob[]
         jobs = new Map(savedJobs.map((job) => [job.id, job]))
     } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
@@ -25,9 +26,9 @@ export async function initializeStore() {
 }
 
 async function persist() {
-    const temporaryPath = `${jobsPath}.tmp`
+    const temporaryPath = `${jobsMetadataPath}.tmp`
     await writeFile(temporaryPath, JSON.stringify([...jobs.values()], null, 2))
-    await rename(temporaryPath, jobsPath)
+    await replaceFile(temporaryPath, jobsMetadataPath)
 }
 
 function schedulePersist() {
@@ -61,4 +62,14 @@ export async function saveJob(job: ConversionJob) {
 export async function removeJob(id: string) {
     jobs.delete(id)
     await schedulePersist()
+}
+
+export const localJobRepository: JobRepository = {
+    initialize: initializeStore,
+    list: async () => listJobs(),
+    get: async (id) => getJob(id),
+    listForOwner: async (ownerId) => listJobsForOwner(ownerId),
+    getForOwner: async (id, ownerId) => getJobForOwner(id, ownerId),
+    save: saveJob,
+    remove: removeJob,
 }

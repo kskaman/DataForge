@@ -1,7 +1,7 @@
 import { rm } from 'node:fs/promises'
 import type { Request, Response } from 'express'
+import { repositories } from '../dependencies.js'
 import { configureBatch, createBatch, retryBatch } from '../services/batch-service.js'
-import { getBatchForOwner, listBatchesForOwner } from '../repositories/batch-store.js'
 import { toPublicBatchJob, type BatchConfiguration } from '../types.js'
 import { ClientError } from '../utils/client-error.js'
 import { hasValidSignature, signDownload } from '../utils/download-token.js'
@@ -23,20 +23,22 @@ export async function createBatchHandler(request: Request, response: Response) {
     }
 }
 
-export function listBatchHandler(request: Request, response: Response) {
+export async function listBatchHandler(request: Request, response: Response) {
     response.json({
-        batches: listBatchesForOwner(request.guestOwnerId).map(toPublicBatchJob),
+        batches: (await repositories.batches.listForOwner(request.guestOwnerId)).map(
+            toPublicBatchJob,
+        ),
     })
 }
 
-export function getBatchHandler(request: BatchRequest, response: Response) {
-    const batch = getBatchForOwner(request.params.id, request.guestOwnerId)
+export async function getBatchHandler(request: BatchRequest, response: Response) {
+    const batch = await repositories.batches.getForOwner(request.params.id, request.guestOwnerId)
     if (!batch) return response.status(404).json({ error: 'Batch not found.' })
     return response.json({ batch: toPublicBatchJob(batch) })
 }
 
 export async function configureBatchHandler(request: BatchRequest, response: Response) {
-    const batch = getBatchForOwner(request.params.id, request.guestOwnerId)
+    const batch = await repositories.batches.getForOwner(request.params.id, request.guestOwnerId)
     if (!batch) return response.status(404).json({ error: 'Batch not found.' })
     try {
         const configured = await configureBatch(
@@ -54,7 +56,7 @@ export async function configureBatchHandler(request: BatchRequest, response: Res
 }
 
 export async function retryBatchHandler(request: BatchRequest, response: Response) {
-    const batch = getBatchForOwner(request.params.id, request.guestOwnerId)
+    const batch = await repositories.batches.getForOwner(request.params.id, request.guestOwnerId)
     if (!batch) return response.status(404).json({ error: 'Batch not found.' })
     if (batch.status !== 'failed')
         return response.status(409).json({ error: 'Only failed batches can be retried.' })
@@ -63,8 +65,8 @@ export async function retryBatchHandler(request: BatchRequest, response: Respons
         .json({ batch: toPublicBatchJob(await retryBatch(batch, request.requestId)) })
 }
 
-export function getBatchDownloadHandler(request: BatchRequest, response: Response) {
-    const batch = getBatchForOwner(request.params.id, request.guestOwnerId)
+export async function getBatchDownloadHandler(request: BatchRequest, response: Response) {
+    const batch = await repositories.batches.getForOwner(request.params.id, request.guestOwnerId)
     if (!batch) return response.status(404).json({ error: 'Batch not found.' })
     if (batch.status !== 'completed' || !batch.resultPath)
         return response.status(409).json({ error: 'Batch result is not ready.' })
@@ -76,8 +78,8 @@ export function getBatchDownloadHandler(request: BatchRequest, response: Respons
     })
 }
 
-export function batchDownloadHandler(request: BatchRequest, response: Response) {
-    const batch = getBatchForOwner(request.params.id, request.guestOwnerId)
+export async function batchDownloadHandler(request: BatchRequest, response: Response) {
+    const batch = await repositories.batches.getForOwner(request.params.id, request.guestOwnerId)
     const expires = Number(request.query.expires)
     const token = typeof request.query.token === 'string' ? request.query.token : ''
     if (!batch || !batch.resultPath || !batch.resultFileName)

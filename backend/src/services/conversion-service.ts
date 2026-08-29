@@ -2,7 +2,7 @@ import archiver from 'archiver'
 import { createWriteStream } from 'node:fs'
 import { rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { resultDirectory } from '../repositories/job-store.js'
+import { jobResultDirectory } from '../adapters/local/storage-paths.js'
 import type { ConversionJob, OutputFormat } from '../types.js'
 import { readDatasets, type Dataset } from './dataset-service.js'
 
@@ -68,7 +68,7 @@ export async function convertJob(job: ConversionJob) {
     const extension = job.format.toLowerCase()
     const shouldArchive = job.splitSheets && job.fileName.toLowerCase().endsWith('.xlsx')
     const resultFileName = shouldArchive ? `${baseName}.zip` : `${baseName}.${extension}`
-    const resultPath = path.join(resultDirectory, `${job.id}-${resultFileName}`)
+    const resultPath = path.join(jobResultDirectory, `${job.id}-${resultFileName}`)
 
     await rm(resultPath, { force: true })
     if (shouldArchive) {

@@ -69,6 +69,14 @@ Containerizing this implementation without replacing those boundaries would crea
 
 Define interfaces for job metadata, batch metadata, source/result objects, and conversion dispatch. Keep local filesystem/JSON/in-process implementations as the default adapters.
 
+Progress:
+
+- [x] 1A: asynchronous job and batch metadata repository contracts with local JSON adapters;
+- [ ] 1B: source/result object-storage contract with a local filesystem adapter;
+- [ ] 1C: conversion dispatch contract with a local in-process adapter.
+
+`backend/src/dependencies.ts` is the composition point that selects repository adapters. Controllers and services consume the contracts instead of importing JSON stores. Repository reads are asynchronous even though the local maps are not, because DynamoDB access will be asynchronous.
+
 Why first: service and controller behavior can remain stable while AWS adapters are introduced later. Local development and all existing tests continue to work without AWS.
 
 Acceptance checks:
