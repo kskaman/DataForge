@@ -1,82 +1,80 @@
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 import { config } from '../config.js'
-import { objectStorage, repositories } from '../dependencies.js'
+import { conversionDispatcher, objectStorage, repositories } from '../dependencies.js'
 import type { ConversionJob, OutputFormat } from '../types.js'
 import { errorDetails, log } from '../utils/logger.js'
 import { publicErrorMessage } from '../utils/public-error.js'
 import { convertJob } from './conversion-service.js'
 
-export function queueJob(id: string) {
-    setImmediate(async () => {
-        const job = await repositories.jobs.get(id)
-        if (!job || job.status !== 'queued') return
-        const processingStartedAt = Date.now()
-        const queuedAt = job.queuedAt ? new Date(job.queuedAt).getTime() : undefined
-        const queueWaitMs =
-            queuedAt === undefined ? undefined : Math.max(0, processingStartedAt - queuedAt)
+export async function processJob(id: string) {
+    const job = await repositories.jobs.get(id)
+    if (!job || job.status !== 'queued') return
+    const processingStartedAt = Date.now()
+    const queuedAt = job.queuedAt ? new Date(job.queuedAt).getTime() : undefined
+    const queueWaitMs =
+        queuedAt === undefined ? undefined : Math.max(0, processingStartedAt - queuedAt)
 
-        try {
-            await repositories.jobs.save({ ...job, status: 'processing', error: null })
-            log('info', 'job.processing', {
+    try {
+        await repositories.jobs.save({ ...job, status: 'processing', error: null })
+        log('info', 'job.processing', {
+            requestId: job.requestId,
+            jobId: id,
+            outputFormat: job.format,
+            inputBytes: job.fileSize,
+            queueWaitMs,
+        })
+        const result = await convertJob(job)
+        const outputBytes = await objectStorage.getObjectSize(result.resultKey)
+        const currentJob = await repositories.jobs.get(id)
+        if (!currentJob) return
+        await repositories.jobs.save({
+            ...currentJob,
+            ...result,
+            status: 'completed',
+            error: null,
+        })
+        log('info', 'job.completed', {
+            requestId: job.requestId,
+            jobId: id,
+            outputFormat: job.format,
+            inputBytes: job.fileSize,
+            outputBytes,
+            queueWaitMs,
+            processingDurationMs: Date.now() - processingStartedAt,
+            successCount: 1,
+            failureCount: 0,
+        })
+        void objectStorage.deleteObject(job.sourceKey).catch((error) => {
+            log('error', 'job.source_cleanup_failed', {
                 requestId: job.requestId,
                 jobId: id,
-                outputFormat: job.format,
-                inputBytes: job.fileSize,
-                queueWaitMs,
-            })
-            const result = await convertJob(job)
-            const outputBytes = await objectStorage.getObjectSize(result.resultKey)
-            const currentJob = await repositories.jobs.get(id)
-            if (!currentJob) return
-            await repositories.jobs.save({
-                ...currentJob,
-                ...result,
-                status: 'completed',
-                error: null,
-            })
-            log('info', 'job.completed', {
-                requestId: job.requestId,
-                jobId: id,
-                outputFormat: job.format,
-                inputBytes: job.fileSize,
-                outputBytes,
-                queueWaitMs,
-                processingDurationMs: Date.now() - processingStartedAt,
-                successCount: 1,
-                failureCount: 0,
-            })
-            void objectStorage.deleteObject(job.sourceKey).catch((error) => {
-                log('error', 'job.source_cleanup_failed', {
-                    requestId: job.requestId,
-                    jobId: id,
-                    ...errorDetails(error),
-                })
-            })
-        } catch (error) {
-            const currentJob = await repositories.jobs.get(id)
-            if (!currentJob) return
-            const message = publicErrorMessage(error, 'Conversion failed.', config.production)
-            await repositories.jobs.save({
-                ...currentJob,
-                status: 'failed',
-                error: message,
-                resultKey: null,
-                resultFileName: null,
-            })
-            log('error', 'job.failed', {
-                requestId: job.requestId,
-                jobId: id,
-                outputFormat: job.format,
-                inputBytes: job.fileSize,
-                queueWaitMs,
-                processingDurationMs: Date.now() - processingStartedAt,
-                successCount: 0,
-                failureCount: 1,
                 ...errorDetails(error),
             })
-        }
-    })
+        })
+    } catch (error) {
+        const currentJob = await repositories.jobs.get(id)
+        if (!currentJob) return
+        const message = publicErrorMessage(error, 'Conversion failed.', config.production)
+        await repositories.jobs.save({
+            ...currentJob,
+            status: 'failed',
+            error: message,
+            resultKey: null,
+            resultFileName: null,
+        })
+        log('error', 'job.failed', {
+            requestId: job.requestId,
+            jobId: id,
+            outputFormat: job.format,
+            inputBytes: job.fileSize,
+            queueWaitMs,
+            processingDurationMs: Date.now() - processingStartedAt,
+            successCount: 0,
+            failureCount: 1,
+            ...errorDetails(error),
+        })
+    }
 }
 
 export async function createJob(
@@ -126,7 +124,7 @@ export async function createJob(
         inputBytes: job.fileSize,
     })
 
-    queueJob(id)
+    await conversionDispatcher.dispatch({ type: 'job.convert', jobId: id })
     return job
 }
 
@@ -150,7 +148,7 @@ export async function retryJob(job: ConversionJob, requestId: string) {
         inputBytes: job.fileSize,
     })
 
-    queueJob(job.id)
+    await conversionDispatcher.dispatch({ type: 'job.convert', jobId: job.id })
     return retriedJob
 }
 
@@ -179,14 +177,13 @@ export async function initializeJobs() {
         (job) => job.status === 'queued' || job.status === 'processing',
     )
 
-    unfinishedJobs.forEach((job) => {
-        void repositories.jobs
-            .save({
-                ...job,
-                status: 'queued',
-            })
-            .then(() => queueJob(job.id))
-    })
+    for (const job of unfinishedJobs) {
+        await repositories.jobs.save({
+            ...job,
+            status: 'queued',
+        })
+        await conversionDispatcher.dispatch({ type: 'job.convert', jobId: job.id })
+    }
 
     setInterval(() => void cleanupExpiredJobs(), 60 * 60 * 1000).unref()
 }

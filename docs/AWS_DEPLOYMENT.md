@@ -73,11 +73,13 @@ Progress:
 
 - [x] 1A: asynchronous job and batch metadata repository contracts with local JSON adapters;
 - [x] 1B: asynchronous source/result object-storage contract with a local filesystem adapter;
-- [ ] 1C: conversion dispatch contract with a local in-process adapter.
+- [x] 1C: asynchronous conversion dispatch contract with a local in-process adapter.
 
-`backend/src/dependencies.ts` is the composition point that selects repository and object-storage adapters. Controllers and services consume the contracts instead of importing JSON stores or persistent filesystem paths. Repository and object-storage operations are asynchronous even though the local implementations are not remote, because DynamoDB and S3 access will be asynchronous.
+`backend/src/dependencies.ts` is the composition point that selects repository, object-storage, and conversion-dispatch adapters. Controllers and services consume the contracts instead of importing JSON stores, persistent filesystem paths, or an in-process scheduling mechanism. These operations are asynchronous even though the local implementations are not remote, because DynamoDB, S3, and SQS access will be asynchronous.
 
 Metadata now stores relative object keys instead of absolute server paths. The local repositories normalize existing path-based JSON records when loading them, preserving retained local artifacts across the migration. Downloads are streamed through the object-storage contract. Multipart uploads and SQLite generation may still use short-lived operating-system temporary files, but persistent sources and results are owned by the selected object-storage adapter.
+
+Conversion submission now uses identifier-only commands for job conversion, batch analysis, and batch conversion. The local dispatcher preserves deferred in-process execution; a future SQS adapter can publish the same commands without receiving guest tokens, file contents, or repository records. Readiness reports the selected dispatcher provider and health.
 
 Why first: service and controller behavior can remain stable while AWS adapters are introduced later. Local development and all existing tests continue to work without AWS.
 
@@ -85,9 +87,8 @@ Acceptance checks:
 
 - no service imports a concrete JSON repository directly;
 - no service assumes a local source/result path;
+- no service schedules conversion work directly;
 - current unit and smoke tests pass with local adapters.
-
-The remaining milestone 1 acceptance check, queue submission behind an interface, belongs to 1C.
 
 ### 2. Worker Boundary
 

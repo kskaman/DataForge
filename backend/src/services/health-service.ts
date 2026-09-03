@@ -1,4 +1,4 @@
-import { objectStorage } from '../dependencies.js'
+import { conversionDispatcher, objectStorage } from '../dependencies.js'
 
 let applicationInitialized = false
 
@@ -16,14 +16,18 @@ export function livenessReport() {
 
 export async function readinessReport() {
     let storageReady = true
+    let dispatcherReady = true
 
-    try {
-        await objectStorage.checkHealth()
-    } catch {
-        storageReady = false
-    }
+    await Promise.all([
+        objectStorage.checkHealth().catch(() => {
+            storageReady = false
+        }),
+        conversionDispatcher.checkHealth().catch(() => {
+            dispatcherReady = false
+        }),
+    ])
 
-    const ready = applicationInitialized && storageReady
+    const ready = applicationInitialized && storageReady && dispatcherReady
 
     return {
         status: ready ? ('ok' as const) : ('not_ready' as const),
@@ -32,8 +36,11 @@ export async function readinessReport() {
             initialization: applicationInitialized ? ('ok' as const) : ('not_ready' as const),
             storage: storageReady ? ('ok' as const) : ('not_ready' as const),
             queue: {
-                status: applicationInitialized ? ('ok' as const) : ('not_ready' as const),
-                provider: 'in-process',
+                status:
+                    applicationInitialized && dispatcherReady
+                        ? ('ok' as const)
+                        : ('not_ready' as const),
+                provider: conversionDispatcher.provider,
             },
         },
     }

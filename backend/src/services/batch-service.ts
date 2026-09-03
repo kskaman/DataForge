@@ -5,7 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import Database from 'better-sqlite3'
 import { config } from '../config.js'
-import { objectStorage, repositories } from '../dependencies.js'
+import { conversionDispatcher, objectStorage, repositories } from '../dependencies.js'
 
 import type {
     BatchConfiguration,
@@ -115,13 +115,9 @@ export async function createBatch(
         inputBytes: batch.fileSize,
     })
 
-    queueAnalysis(batch.id)
+    await conversionDispatcher.dispatch({ type: 'batch.analyze', batchId: batch.id })
 
     return batch
-}
-
-export function queueAnalysis(id: string) {
-    setImmediate(() => void analyzeBatch(id))
 }
 
 export async function analyzeBatch(id: string) {
@@ -274,7 +270,9 @@ export async function analyzeBatch(id: string) {
             failureCount: faults.length > 0 ? 1 : 0,
         },
     )
-    if (canResume) queueBatch(id)
+    if (canResume) {
+        await conversionDispatcher.dispatch({ type: 'batch.convert', batchId: id })
+    }
 }
 
 export async function configureBatch(
@@ -315,12 +313,8 @@ export async function configureBatch(
         fileCount: batch.fileCount,
         inputBytes: batch.fileSize,
     })
-    queueBatch(batch.id)
+    await conversionDispatcher.dispatch({ type: 'batch.convert', batchId: batch.id })
     return configured
-}
-
-export function queueBatch(id: string) {
-    setImmediate(() => void processBatch(id))
 }
 
 async function loadBatchDatasets(batch: BatchJob) {
@@ -659,7 +653,7 @@ export async function retryBatch(batch: BatchJob, requestId: string) {
         inputBytes: batch.fileSize,
         retry: true,
     })
-    queueAnalysis(batch.id)
+    await conversionDispatcher.dispatch({ type: 'batch.analyze', batchId: batch.id })
     return retried
 }
 
@@ -681,10 +675,12 @@ export async function initializeBatches() {
     await repositories.batches.initialize()
     await cleanupExpiredBatches()
     for (const batch of await repositories.batches.list()) {
-        if (batch.status === 'analyzing') queueAnalysis(batch.id)
+        if (batch.status === 'analyzing') {
+            await conversionDispatcher.dispatch({ type: 'batch.analyze', batchId: batch.id })
+        }
         if (batch.status === 'queued' || batch.status === 'processing') {
             await repositories.batches.save({ ...batch, status: 'queued' })
-            queueBatch(batch.id)
+            await conversionDispatcher.dispatch({ type: 'batch.convert', batchId: batch.id })
         }
     }
     setInterval(() => void cleanupExpiredBatches(), 60 * 60 * 1000).unref()
