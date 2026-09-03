@@ -5,6 +5,7 @@ import { configureBatch, createBatch, retryBatch } from '../services/batch-servi
 import { toPublicBatchJob, type BatchConfiguration } from '../types.js'
 import { ClientError } from '../utils/client-error.js'
 import { hasValidSignature, signDownload } from '../utils/download-token.js'
+import { sendObject } from '../utils/send-object.js'
 
 type BatchRequest = Request<{ id: string }>
 
@@ -68,7 +69,7 @@ export async function retryBatchHandler(request: BatchRequest, response: Respons
 export async function getBatchDownloadHandler(request: BatchRequest, response: Response) {
     const batch = await repositories.batches.getForOwner(request.params.id, request.guestOwnerId)
     if (!batch) return response.status(404).json({ error: 'Batch not found.' })
-    if (batch.status !== 'completed' || !batch.resultPath)
+    if (batch.status !== 'completed' || !batch.resultKey)
         return response.status(409).json({ error: 'Batch result is not ready.' })
     const expires = Date.now() + 5 * 60 * 1000
     const token = signDownload(batch.id, expires)
@@ -82,9 +83,9 @@ export async function batchDownloadHandler(request: BatchRequest, response: Resp
     const batch = await repositories.batches.getForOwner(request.params.id, request.guestOwnerId)
     const expires = Number(request.query.expires)
     const token = typeof request.query.token === 'string' ? request.query.token : ''
-    if (!batch || !batch.resultPath || !batch.resultFileName)
+    if (!batch || !batch.resultKey || !batch.resultFileName)
         return response.status(404).json({ error: 'Batch result not found.' })
     if (!hasValidSignature(batch.id, expires, token))
         return response.status(403).json({ error: 'Download link is invalid or expired.' })
-    return response.download(batch.resultPath, batch.resultFileName)
+    await sendObject(response, batch.resultKey, batch.resultFileName)
 }

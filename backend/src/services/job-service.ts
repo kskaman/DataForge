@@ -1,9 +1,7 @@
 import { randomUUID } from 'node:crypto'
-import { rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { jobSourceDirectory } from '../adapters/local/storage-paths.js'
 import { config } from '../config.js'
-import { repositories } from '../dependencies.js'
+import { objectStorage, repositories } from '../dependencies.js'
 import type { ConversionJob, OutputFormat } from '../types.js'
 import { errorDetails, log } from '../utils/logger.js'
 import { publicErrorMessage } from '../utils/public-error.js'
@@ -28,7 +26,7 @@ export function queueJob(id: string) {
                 queueWaitMs,
             })
             const result = await convertJob(job)
-            const resultStats = await stat(result.resultPath)
+            const outputBytes = await objectStorage.getObjectSize(result.resultKey)
             const currentJob = await repositories.jobs.get(id)
             if (!currentJob) return
             await repositories.jobs.save({
@@ -42,13 +40,13 @@ export function queueJob(id: string) {
                 jobId: id,
                 outputFormat: job.format,
                 inputBytes: job.fileSize,
-                outputBytes: resultStats.size,
+                outputBytes,
                 queueWaitMs,
                 processingDurationMs: Date.now() - processingStartedAt,
                 successCount: 1,
                 failureCount: 0,
             })
-            void rm(job.sourcePath, { force: true }).catch((error) => {
+            void objectStorage.deleteObject(job.sourceKey).catch((error) => {
                 log('error', 'job.source_cleanup_failed', {
                     requestId: job.requestId,
                     jobId: id,
@@ -63,7 +61,7 @@ export function queueJob(id: string) {
                 ...currentJob,
                 status: 'failed',
                 error: message,
-                resultPath: null,
+                resultKey: null,
                 resultFileName: null,
             })
             log('error', 'job.failed', {
@@ -90,9 +88,9 @@ export async function createJob(
 ) {
     const id = randomUUID()
     const extension = path.extname(file.originalname).slice(1).toLowerCase()
-    const sourcePath = path.join(jobSourceDirectory, `${id}.${extension}`)
+    const sourceKey = `sources/${id}.${extension}`
 
-    await writeFile(sourcePath, file.buffer)
+    await objectStorage.putObject(sourceKey, file.buffer)
 
     const now = Date.now()
 
@@ -109,12 +107,17 @@ export async function createJob(
         createdAt: new Date(now).toISOString(),
         expiresAt: new Date(now + config.retentionMilliseconds).toISOString(),
         error: null,
-        sourcePath,
-        resultPath: null,
+        sourceKey,
+        resultKey: null,
         resultFileName: null,
     }
 
-    await repositories.jobs.save(job)
+    try {
+        await repositories.jobs.save(job)
+    } catch (error) {
+        await objectStorage.deleteObject(sourceKey)
+        throw error
+    }
 
     log('info', 'job.queued', {
         requestId,
@@ -134,7 +137,7 @@ export async function retryJob(job: ConversionJob, requestId: string) {
         queuedAt: new Date().toISOString(),
         status: 'queued',
         error: null,
-        resultPath: null,
+        resultKey: null,
         resultFileName: null,
     }
 
@@ -158,8 +161,8 @@ export async function cleanupExpiredJobs() {
 
     for (const job of expiredJobs) {
         await Promise.all([
-            rm(job.sourcePath, { force: true }),
-            job.resultPath ? rm(job.resultPath, { force: true }) : Promise.resolve(),
+            objectStorage.deleteObject(job.sourceKey),
+            job.resultKey ? objectStorage.deleteObject(job.resultKey) : Promise.resolve(),
         ])
 
         await repositories.jobs.remove(job.id)

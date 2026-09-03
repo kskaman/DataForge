@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto'
-import { rm } from 'node:fs/promises'
+import { mkdir, rm } from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
 import { Router, type NextFunction, type Request, type Response } from 'express'
 import multer from 'multer'
-import { batchSourceDirectory } from '../adapters/local/storage-paths.js'
 import {
     batchDownloadHandler,
     configureBatchHandler,
@@ -23,7 +23,13 @@ import {
 
 const upload = multer({
     storage: multer.diskStorage({
-        destination: batchSourceDirectory,
+        destination: (_request, _file, callback) => {
+            const directory = path.join(os.tmpdir(), 'dataforge-uploads')
+            void mkdir(directory, { recursive: true }).then(
+                () => callback(null, directory),
+                (error) => callback(error, directory),
+            )
+        },
         filename: (_request, file, callback) =>
             callback(null, `${randomUUID()}${path.extname(file.originalname).toLowerCase()}`),
     }),

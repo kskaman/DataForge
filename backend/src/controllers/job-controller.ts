@@ -3,6 +3,7 @@ import { repositories } from '../dependencies.js'
 import { createJob, retryJob } from '../services/job-service.js'
 import { outputFormats, toPublicJob, type OutputFormat } from '../types.js'
 import { hasValidSignature, signDownload } from '../utils/download-token.js'
+import { sendObject } from '../utils/send-object.js'
 
 type JobRequest = Request<{ id: string }>
 
@@ -93,7 +94,7 @@ export async function getDownloadHandler(request: JobRequest, response: Response
         })
     }
 
-    if (job.status !== 'completed' || !job.resultPath) {
+    if (job.status !== 'completed' || !job.resultKey) {
         return response.status(409).json({
             error: 'Result is not ready.',
         })
@@ -113,7 +114,7 @@ export async function downloadHandler(request: JobRequest, response: Response) {
     const expires = Number(request.query.expires)
     const token = typeof request.query.token === 'string' ? request.query.token : ''
 
-    if (!job || !job.resultPath || !job.resultFileName) {
+    if (!job || !job.resultKey || !job.resultFileName) {
         return response.status(404).json({
             error: 'Result not found.',
         })
@@ -125,5 +126,5 @@ export async function downloadHandler(request: JobRequest, response: Response) {
         })
     }
 
-    return response.download(job.resultPath, job.resultFileName)
+    await sendObject(response, job.resultKey, job.resultFileName)
 }

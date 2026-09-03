@@ -1,9 +1,6 @@
+import path from 'node:path'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import {
-    batchResultDirectory,
-    batchesMetadataPath,
-    batchSourceDirectory,
-} from '../adapters/local/storage-paths.js'
+import { batchesMetadataPath, localPathToObjectKey } from '../adapters/local/storage-paths.js'
 import type { BatchRepository } from '../contracts/batch-repository.js'
 import type { BatchJob } from '../types.js'
 import { replaceFile } from '../adapters/local/atomic-file.js'
@@ -11,15 +8,36 @@ import { replaceFile } from '../adapters/local/atomic-file.js'
 let batches = new Map<string, BatchJob>()
 let writeQueue = Promise.resolve()
 
+type LegacyBatchJob = Omit<BatchJob, 'sources' | 'resultKey'> & {
+    sources: Array<
+        Omit<BatchJob['sources'][number], 'sourceKey'> & {
+            sourcePath?: string
+            sourceKey?: string
+        }
+    >
+    resultPath?: string | null
+    resultKey?: string | null
+}
+
+function normalizeBatch(batch: LegacyBatchJob): BatchJob {
+    const sources = batch.sources.map(({ sourcePath, sourceKey, ...source }) => ({
+        ...source,
+        sourceKey: sourceKey ?? localPathToObjectKey(sourcePath ?? ''),
+    }))
+    const resultKey =
+        batch.resultKey ?? (batch.resultPath ? localPathToObjectKey(batch.resultPath) : null)
+    const { resultPath: _resultPath, ...currentBatch } = batch
+    return { ...currentBatch, sources, resultKey }
+}
+
 export async function initializeBatchStore() {
-    await Promise.all([
-        mkdir(batchSourceDirectory, { recursive: true }),
-        mkdir(batchResultDirectory, { recursive: true }),
-    ])
+    await mkdir(path.dirname(batchesMetadataPath), { recursive: true })
 
     try {
-        const savedBatches = JSON.parse(await readFile(batchesMetadataPath, 'utf8')) as BatchJob[]
-        batches = new Map(savedBatches.map((batch) => [batch.id, batch]))
+        const savedBatches = JSON.parse(
+            await readFile(batchesMetadataPath, 'utf8'),
+        ) as LegacyBatchJob[]
+        batches = new Map(savedBatches.map(normalizeBatch).map((batch) => [batch.id, batch]))
     } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
     }

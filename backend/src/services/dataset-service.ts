@@ -1,6 +1,6 @@
 import ExcelJS from 'exceljs'
-import { readFile } from 'node:fs/promises'
 import { parse } from 'csv-parse/sync'
+import { objectStorage } from '../dependencies.js'
 
 export type Dataset = {
     sourceFileName: string
@@ -28,15 +28,15 @@ function normalizeValue(value: ExcelJS.CellValue): unknown {
     return String(value)
 }
 
-export async function readDatasets(sourcePath: string, sourceFileName: string): Promise<Dataset[]> {
-    if (sourceFileName.toLowerCase().endsWith('.csv')) {
-        const source = await readFile(sourcePath, 'utf8')
+export async function readDatasets(sourceKey: string, sourceFileName: string): Promise<Dataset[]> {
+    const source = await objectStorage.readObject(sourceKey)
 
+    if (sourceFileName.toLowerCase().endsWith('.csv')) {
         return [
             {
                 sourceFileName,
                 sheetName: 'data',
-                rows: parse(source, {
+                rows: parse(source.toString('utf8'), {
                     bom: true,
                     relax_column_count: true,
                     skip_empty_lines: true,
@@ -46,8 +46,6 @@ export async function readDatasets(sourcePath: string, sourceFileName: string): 
     }
 
     const workbook = new ExcelJS.Workbook()
-    const source = await readFile(sourcePath)
-
     await workbook.xlsx.load(source as unknown as Parameters<typeof workbook.xlsx.load>[0])
 
     return workbook.worksheets.map((worksheet) => ({

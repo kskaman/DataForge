@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto'
-import { rename, rm, stat, writeFile } from 'node:fs/promises'
+import { createReadStream } from 'node:fs'
+import { mkdtemp, rm } from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
 import Database from 'better-sqlite3'
-import { batchResultDirectory } from '../adapters/local/storage-paths.js'
 import { config } from '../config.js'
-import { repositories } from '../dependencies.js'
+import { objectStorage, repositories } from '../dependencies.js'
 
 import type {
     BatchConfiguration,
@@ -59,9 +60,29 @@ export async function createBatch(
     }
 
     const now = Date.now()
+    const id = randomUUID()
+    const sources: BatchJob['sources'] = []
+
+    try {
+        for (const file of files) {
+            const extension = path.extname(file.originalname).toLowerCase()
+            const sourceKey = `batch-sources/${id}-${randomUUID()}${extension}`
+            await objectStorage.putObject(sourceKey, createReadStream(file.path))
+            sources.push({
+                fileName: path.basename(file.originalname),
+                fileSize: file.size,
+                sourceKey,
+            })
+        }
+    } catch (error) {
+        await Promise.all(sources.map((source) => objectStorage.deleteObject(source.sourceKey)))
+        throw error
+    } finally {
+        await Promise.all(files.map((file) => rm(file.path, { force: true })))
+    }
 
     const batch: BatchJob = {
-        id: randomUUID(),
+        id,
         ownerId,
         requestId,
         queuedAt: new Date(now).toISOString(),
@@ -71,20 +92,21 @@ export async function createBatch(
         status: 'analyzing',
         createdAt: new Date(now).toISOString(),
         expiresAt: new Date(now + config.retentionMilliseconds).toISOString(),
-        sources: files.map((file) => ({
-            fileName: path.basename(file.originalname),
-            fileSize: file.size,
-            sourcePath: file.path,
-        })),
+        sources,
         datasets: [],
         schemaGroups: [],
         faults: [],
         configuration: null,
-        resultPath: null,
+        resultKey: null,
         resultFileName: null,
     }
 
-    await repositories.batches.save(batch)
+    try {
+        await repositories.batches.save(batch)
+    } catch (error) {
+        await Promise.all(sources.map((source) => objectStorage.deleteObject(source.sourceKey)))
+        throw error
+    }
 
     log('info', 'batch.analysis_queued', {
         requestId,
@@ -138,7 +160,7 @@ export async function analyzeBatch(id: string) {
         }
 
         try {
-            const datasets = await readDatasets(source.sourcePath, source.fileName)
+            const datasets = await readDatasets(source.sourceKey, source.fileName)
 
             if (datasets.length === 0) {
                 faults.push(
@@ -304,7 +326,7 @@ export function queueBatch(id: string) {
 async function loadBatchDatasets(batch: BatchJob) {
     const datasets: Dataset[] = []
     for (const source of batch.sources)
-        datasets.push(...(await readDatasets(source.sourcePath, source.fileName)))
+        datasets.push(...(await readDatasets(source.sourceKey, source.fileName)))
     return datasets
 }
 
@@ -393,10 +415,9 @@ function insertDatasetTable(
 
 async function createSqliteResult(batch: BatchJob, datasets: Dataset[]) {
     const resultFileName = `dataforge-${batch.id.slice(0, 8)}.sqlite`
-    const resultPath = path.join(batchResultDirectory, `${batch.id}-${resultFileName}`)
-    const temporaryPath = `${resultPath}.tmp`
-    await rm(temporaryPath, { force: true })
-    await rm(resultPath, { force: true })
+    const resultKey = `batch-results/${batch.id}-${resultFileName}`
+    const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), 'dataforge-sqlite-'))
+    const temporaryPath = path.join(temporaryDirectory, resultFileName)
     const database = new Database(temporaryPath)
 
     try {
@@ -468,14 +489,17 @@ async function createSqliteResult(batch: BatchJob, datasets: Dataset[]) {
         })()
     } catch (error) {
         database.close()
-        await rm(temporaryPath, { force: true })
         throw error
     } finally {
         if (database.open) database.close()
     }
 
-    await rename(temporaryPath, resultPath)
-    return { resultPath, resultFileName }
+    try {
+        await objectStorage.putObject(resultKey, createReadStream(temporaryPath))
+    } finally {
+        await rm(temporaryDirectory, { recursive: true, force: true })
+    }
+    return { resultKey, resultFileName }
 }
 
 async function createBatchResult(batch: BatchJob, datasets: Dataset[]) {
@@ -487,24 +511,17 @@ async function createBatchResult(batch: BatchJob, datasets: Dataset[]) {
 
     if (configuration.strategy === 'separate') {
         const resultFileName = `dataforge-${batch.id.slice(0, 8)}.zip`
-        const resultPath = path.join(batchResultDirectory, `${batch.id}-${resultFileName}`)
-        const temporaryPath = `${resultPath}.tmp`
-        await rm(temporaryPath, { force: true })
-        await rm(resultPath, { force: true })
-        try {
-            await createArchive(
-                temporaryPath,
+        const resultKey = `batch-results/${batch.id}-${resultFileName}`
+        await objectStorage.putObject(
+            resultKey,
+            createArchive(
                 datasets.map((dataset, index) => ({
                     name: archiveName(dataset, format, index),
                     content: datasetContent(dataset, format),
                 })),
-            )
-            await rename(temporaryPath, resultPath)
-        } catch (error) {
-            await rm(temporaryPath, { force: true })
-            throw error
-        }
-        return { resultPath, resultFileName }
+            ),
+        )
+        return { resultKey, resultFileName }
     }
 
     const grouped = new Map<string, Dataset[]>()
@@ -528,27 +545,15 @@ async function createBatchResult(batch: BatchJob, datasets: Dataset[]) {
 
     if (files.length === 1) {
         const resultFileName = `dataforge-merged.${extension}`
-        const resultPath = path.join(batchResultDirectory, `${batch.id}-${resultFileName}`)
-        const temporaryPath = `${resultPath}.tmp`
-        await rm(temporaryPath, { force: true })
-        await writeFile(temporaryPath, files[0]!.content, 'utf8')
-        await rename(temporaryPath, resultPath)
-        return { resultPath, resultFileName }
+        const resultKey = `batch-results/${batch.id}-${resultFileName}`
+        await objectStorage.putObject(resultKey, files[0]!.content)
+        return { resultKey, resultFileName }
     }
 
     const resultFileName = `dataforge-grouped-${batch.id.slice(0, 8)}.zip`
-    const resultPath = path.join(batchResultDirectory, `${batch.id}-${resultFileName}`)
-    const temporaryPath = `${resultPath}.tmp`
-    await rm(temporaryPath, { force: true })
-    await rm(resultPath, { force: true })
-    try {
-        await createArchive(temporaryPath, files)
-        await rename(temporaryPath, resultPath)
-    } catch (error) {
-        await rm(temporaryPath, { force: true })
-        throw error
-    }
-    return { resultPath, resultFileName }
+    const resultKey = `batch-results/${batch.id}-${resultFileName}`
+    await objectStorage.putObject(resultKey, createArchive(files))
+    return { resultKey, resultFileName }
 }
 
 export async function processBatch(id: string) {
@@ -564,7 +569,7 @@ export async function processBatch(id: string) {
         ...batch,
         status: 'processing',
         faults: [],
-        resultPath: null,
+        resultKey: null,
         resultFileName: null,
     })
     log('info', 'batch.processing', {
@@ -580,7 +585,7 @@ export async function processBatch(id: string) {
     try {
         const datasets = await loadBatchDatasets(batch)
         const result = await createBatchResult(batch, datasets)
-        const resultStats = await stat(result.resultPath)
+        const outputBytes = await objectStorage.getObjectSize(result.resultKey)
         const current = await repositories.batches.get(id)
         if (!current) return
         await repositories.batches.save({ ...current, ...result, status: 'completed' })
@@ -592,14 +597,14 @@ export async function processBatch(id: string) {
             fileCount: batch.fileCount,
             datasetCount: datasets.length,
             inputBytes: batch.fileSize,
-            outputBytes: resultStats.size,
+            outputBytes,
             queueWaitMs,
             processingDurationMs: Date.now() - processingStartedAt,
             successCount: 1,
             failureCount: 0,
         })
         void Promise.all(
-            batch.sources.map((source) => rm(source.sourcePath, { force: true })),
+            batch.sources.map((source) => objectStorage.deleteObject(source.sourceKey)),
         ).catch((error) => {
             log('error', 'batch.source_cleanup_failed', {
                 requestId: batch.requestId,
@@ -610,12 +615,12 @@ export async function processBatch(id: string) {
     } catch (error) {
         const current = await repositories.batches.get(id)
         if (!current) return
-        if (current.resultPath) await rm(current.resultPath, { force: true })
+        if (current.resultKey) await objectStorage.deleteObject(current.resultKey)
         const message = publicErrorMessage(error, 'Batch conversion failed.', config.production)
         await repositories.batches.save({
             ...current,
             status: 'failed',
-            resultPath: null,
+            resultKey: null,
             resultFileName: null,
             faults: [fault('Batch', 'conversion_error', message)],
         })
@@ -644,7 +649,7 @@ export async function retryBatch(batch: BatchJob, requestId: string) {
         datasets: [],
         schemaGroups: [],
         faults: [],
-        resultPath: null,
+        resultKey: null,
         resultFileName: null,
     })
     log('info', 'batch.analysis_queued', {
@@ -664,8 +669,8 @@ export async function cleanupExpiredBatches() {
     )
     for (const batch of expired) {
         await Promise.all([
-            ...batch.sources.map((source) => rm(source.sourcePath, { force: true })),
-            batch.resultPath ? rm(batch.resultPath, { force: true }) : Promise.resolve(),
+            ...batch.sources.map((source) => objectStorage.deleteObject(source.sourceKey)),
+            batch.resultKey ? objectStorage.deleteObject(batch.resultKey) : Promise.resolve(),
         ])
         await repositories.batches.remove(batch.id)
         log('info', 'batch.expired', { batchId: batch.id })

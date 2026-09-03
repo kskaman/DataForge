@@ -16,14 +16,14 @@ export type ConversionJob = {
     createdAt: string
     expiresAt: string
     error: string | null
-    sourcePath: string
-    resultPath: string | null
+    sourceKey: string
+    resultKey: string | null
     resultFileName: string | null
 }
 
 export type PublicJob = Omit<
     ConversionJob,
-    'ownerId' | 'requestId' | 'queuedAt' | 'sourcePath' | 'resultPath' | 'resultFileName'
+    'ownerId' | 'requestId' | 'queuedAt' | 'sourceKey' | 'resultKey' | 'resultFileName'
 > & {
     resultFileName?: string
 }
@@ -36,7 +36,7 @@ export type SqliteLayout = 'per_source' | 'grouped'
 export type BatchSource = {
     fileName: string
     fileSize: number
-    sourcePath: string
+    sourceKey: string
 }
 
 export type DatasetProfile = {
@@ -91,15 +91,15 @@ export type BatchJob = {
     schemaGroups: SchemaGroup[]
     faults: BatchFault[]
     configuration: BatchConfiguration | null
-    resultPath: string | null
+    resultKey: string | null
     resultFileName: string | null
 }
 
 export type PublicBatchJob = Omit<
     BatchJob,
-    'ownerId' | 'requestId' | 'queuedAt' | 'sources' | 'resultPath' | 'resultFileName'
+    'ownerId' | 'requestId' | 'queuedAt' | 'sources' | 'resultKey' | 'resultFileName'
 > & {
-    sources: Array<Omit<BatchSource, 'sourcePath'>>
+    sources: Array<Omit<BatchSource, 'sourceKey'>>
     resultFileName?: string
 }
 
@@ -108,8 +108,8 @@ export function toPublicJob(job: ConversionJob): PublicJob {
         ownerId: _ownerId,
         requestId: _requestId,
         queuedAt: _queuedAt,
-        sourcePath: _sourcePath,
-        resultPath: _resultPath,
+        sourceKey: _sourceKey,
+        resultKey: _resultKey,
         resultFileName,
         ...publicJob
     } = job
@@ -122,13 +122,13 @@ export function toPublicBatchJob(batch: BatchJob): PublicBatchJob {
         ownerId: _ownerId,
         requestId: _requestId,
         queuedAt: _queuedAt,
-        resultPath: _resultPath,
+        resultKey: _resultKey,
         resultFileName,
         sources,
         ...publicBatch
     } = batch
 
-    const publicSources = sources.map(({ sourcePath: _sourcePath, ...source }) => source)
+    const publicSources = sources.map(({ sourceKey: _sourceKey, ...source }) => source)
 
     return resultFileName
         ? {

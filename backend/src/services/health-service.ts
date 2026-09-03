@@ -1,12 +1,4 @@
-import { constants } from 'node:fs'
-import { access } from 'node:fs/promises'
-import {
-    batchResultDirectory,
-    batchSourceDirectory,
-    jobResultDirectory,
-    jobSourceDirectory,
-    storageRoot,
-} from '../adapters/local/storage-paths.js'
+import { objectStorage } from '../dependencies.js'
 
 let applicationInitialized = false
 
@@ -26,15 +18,7 @@ export async function readinessReport() {
     let storageReady = true
 
     try {
-        await Promise.all(
-            [
-                storageRoot,
-                jobSourceDirectory,
-                jobResultDirectory,
-                batchSourceDirectory,
-                batchResultDirectory,
-            ].map((directory) => access(directory, constants.R_OK | constants.W_OK)),
-        )
+        await objectStorage.checkHealth()
     } catch {
         storageReady = false
     }

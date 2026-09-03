@@ -1,9 +1,6 @@
+import path from 'node:path'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import {
-    jobResultDirectory,
-    jobSourceDirectory,
-    jobsMetadataPath,
-} from '../adapters/local/storage-paths.js'
+import { jobsMetadataPath, localPathToObjectKey } from '../adapters/local/storage-paths.js'
 import type { JobRepository } from '../contracts/job-repository.js'
 import type { ConversionJob } from '../types.js'
 import { replaceFile } from '../adapters/local/atomic-file.js'
@@ -11,15 +8,29 @@ import { replaceFile } from '../adapters/local/atomic-file.js'
 let jobs = new Map<string, ConversionJob>()
 let writeQueue = Promise.resolve()
 
+type LegacyConversionJob = Omit<ConversionJob, 'sourceKey' | 'resultKey'> & {
+    sourcePath?: string
+    resultPath?: string | null
+    sourceKey?: string
+    resultKey?: string | null
+}
+
+function normalizeJob(job: LegacyConversionJob): ConversionJob {
+    const sourceKey = job.sourceKey ?? localPathToObjectKey(job.sourcePath ?? '')
+    const resultKey =
+        job.resultKey ?? (job.resultPath ? localPathToObjectKey(job.resultPath) : null)
+    const { sourcePath: _sourcePath, resultPath: _resultPath, ...currentJob } = job
+    return { ...currentJob, sourceKey, resultKey }
+}
+
 export async function initializeStore() {
-    await Promise.all([
-        mkdir(jobSourceDirectory, { recursive: true }),
-        mkdir(jobResultDirectory, { recursive: true }),
-    ])
+    await mkdir(path.dirname(jobsMetadataPath), { recursive: true })
 
     try {
-        const savedJobs = JSON.parse(await readFile(jobsMetadataPath, 'utf8')) as ConversionJob[]
-        jobs = new Map(savedJobs.map((job) => [job.id, job]))
+        const savedJobs = JSON.parse(
+            await readFile(jobsMetadataPath, 'utf8'),
+        ) as LegacyConversionJob[]
+        jobs = new Map(savedJobs.map(normalizeJob).map((job) => [job.id, job]))
     } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
     }

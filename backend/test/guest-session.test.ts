@@ -51,8 +51,8 @@ test('public records redact owner and server paths', () => {
         createdAt: new Date(0).toISOString(),
         expiresAt: new Date(1).toISOString(),
         error: null,
-        sourcePath: 'private-source',
-        resultPath: 'private-result',
+        sourceKey: 'private-source',
+        resultKey: 'private-result',
         resultFileName: 'result.json',
     }
     const batch: BatchJob = {
@@ -66,12 +66,12 @@ test('public records redact owner and server paths', () => {
         status: 'completed',
         createdAt: new Date(0).toISOString(),
         expiresAt: new Date(1).toISOString(),
-        sources: [{ fileName: 'source.csv', fileSize: 10, sourcePath: 'private-source' }],
+        sources: [{ fileName: 'source.csv', fileSize: 10, sourceKey: 'private-source' }],
         datasets: [],
         schemaGroups: [],
         faults: [],
         configuration: { strategy: 'merge', format: 'JSON' },
-        resultPath: 'private-result',
+        resultKey: 'private-result',
         resultFileName: 'result.json',
     }
 
